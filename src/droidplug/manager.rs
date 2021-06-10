@@ -5,11 +5,17 @@ use async_trait::async_trait;
 #[derive(Clone)]
 pub struct Manager;
 
+impl Manager {
+    pub async fn new() -> Result<Manager> {
+        Ok(Manager)
+    }
+}
+
 #[async_trait]
 impl api::Manager for Manager {
     type Adapter = Adapter;
 
     async fn adapters(&self) -> Result<Vec<Adapter>> {
-        vec![Adapter::new()]
+        Ok(vec![Adapter::new()])
     }
 }
