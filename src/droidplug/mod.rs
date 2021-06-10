@@ -8,7 +8,7 @@ use once_cell::sync::OnceCell;
 static GLOBAL_JVM: OnceCell<JavaVM> = OnceCell::new();
 
 pub fn init(jvm: JavaVM) {
-    GLOBAL_JVM.set(jvm);
+    let _ = GLOBAL_JVM.set(jvm);
 }
 
 fn global_jvm() -> &'static JavaVM {
