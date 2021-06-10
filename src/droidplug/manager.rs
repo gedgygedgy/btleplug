@@ -10,6 +10,6 @@ impl api::Manager for Manager {
     type Adapter = Adapter;
 
     async fn adapters(&self) -> Result<Vec<Adapter>> {
-        vec![Adapter]
+        vec![Adapter::new()]
     }
 }
