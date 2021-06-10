@@ -50,4 +50,8 @@ impl Central for Adapter {
             .peripheral(address)
             .ok_or(Error::DeviceNotFound)
     }
+
+    async fn add_peripheral(&self, address: BDAddr) -> Result<Peripheral> {
+        Err(Error::NotSupported("TODO".to_string()))
+    }
 }

@@ -16,7 +16,7 @@ impl api::Peripheral for Peripheral {
         panic!("TODO")
     }
 
-    async fn properties(&self) -> Result<PeripheralProperties> {
+    async fn properties(&self) -> Result<Option<PeripheralProperties>> {
         Err(Error::NotSupported("TODO".to_string()))
     }
 
