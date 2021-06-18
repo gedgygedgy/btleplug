@@ -1,5 +1,3 @@
-pub mod objects;
-
 use ::jni::JavaVM;
 use once_cell::sync::OnceCell;
 
