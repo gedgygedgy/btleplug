@@ -1,0 +1,45 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:4.2.1'
+    }
+}
+
+plugins {
+    id 'com.android.library' version '4.2.1'
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+android {
+    compileSdkVersion 30
+
+    defaultConfig {
+        minSdkVersion 18
+        versionCode 1
+        versionName '0.7.2'
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+def properties = new Properties()
+properties.load(project.rootProject.file("local.properties").newDataInputStream())
+def jniUtilsLocation = properties.getProperty 'jni-utils.location'
+
+dependencies {
+    if (jniUtilsLocation == null) {
+        implementation 'gedgygedgy.rust:jni-utils:0.1.0'
+    } else {
+        implementation files(jniUtilsLocation)
+    }
+}
