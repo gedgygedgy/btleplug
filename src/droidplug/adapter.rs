@@ -1,4 +1,4 @@
-use super::peripheral::Peripheral;
+use super::{jni::global_jvm, peripheral::Peripheral};
 use crate::{
     api::{BDAddr, Central, CentralEvent},
     common::adapter_manager::AdapterManager,
@@ -20,7 +20,7 @@ impl Adapter {
         }
     }
 
-    pub fn add_peripheral(&self, addr: BDAddr, peripheral: Peripheral) {
+    pub fn add(&self, addr: BDAddr, peripheral: Peripheral) {
         self.manager.add_peripheral(addr, peripheral)
     }
 }
@@ -52,6 +52,9 @@ impl Central for Adapter {
     }
 
     async fn add_peripheral(&self, address: BDAddr) -> Result<Peripheral> {
-        Err(Error::NotSupported("TODO".to_string()))
+        let guard = global_jvm().attach_current_thread()?;
+        let peripheral = Peripheral::new(&guard, address)?;
+        self.add(address, peripheral.clone());
+        Ok(peripheral)
     }
 }

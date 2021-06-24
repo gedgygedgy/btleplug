@@ -15,6 +15,7 @@ class Peripheral {
     private final BluetoothDevice device;
     private BluetoothGatt gatt;
     private final Callback callback;
+    private boolean connected = false;
 
     private final Queue<Future.Waker<Void>> connectQueue = new LinkedList<>();
     private final Queue<Future.Waker<Void>> disconnectQueue = new LinkedList<>();
@@ -28,11 +29,19 @@ class Peripheral {
         return asyncWithWaker((waker) -> {
             synchronized (this) {
                 if (this.gatt == null) {
-                    this.gatt = this.device.connectGatt(null, false, this.callback);
-                } else if (!this.gatt.connect()) {
+                    try {
+                        this.connectQueue.add(waker);
+                        this.gatt = this.device.connectGatt(null, false, this.callback);
+                    } catch (SecurityException ex) {
+                        throw new PermissionDeniedException(ex);
+                    }
+                } else if (this.connected) {
+                    waker.wake(null);
+                } else if (this.gatt.connect()) {
+                    this.connectQueue.add(waker);
+                } else {
                     throw new RuntimeException("Unable to reconnect to device");
                 }
-                this.connectQueue.add(waker);
             }
         });
     }
@@ -40,7 +49,7 @@ class Peripheral {
     public Future<Void> disconnect() {
         return asyncWithWaker((waker) -> {
             synchronized (this) {
-                if (this.gatt == null) {
+                if (this.gatt == null || !this.connected) {
                     waker.wake(null);
                 } else {
                     this.gatt.disconnect();
@@ -50,6 +59,10 @@ class Peripheral {
         });
     }
 
+    public boolean isConnected() {
+        return this.connected;
+    }
+
     private class Callback extends BluetoothGattCallback {
         @Override
         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
@@ -57,9 +70,11 @@ class Peripheral {
                 if (status == BluetoothGatt.GATT_SUCCESS) {
                     switch (newState) {
                         case BluetoothGatt.STATE_CONNECTED:
+                            Peripheral.this.connected = true;
                             wakeQueue(Peripheral.this.connectQueue, null);
                             break;
                         case BluetoothGatt.STATE_DISCONNECTED:
+                            Peripheral.this.connected = false;
                             wakeQueue(Peripheral.this.disconnectQueue, null);
                             break;
                     }

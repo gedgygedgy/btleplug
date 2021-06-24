@@ -4,16 +4,59 @@ use crate::{
 };
 use async_trait::async_trait;
 use futures::stream::Stream;
-use std::collections::BTreeSet;
-use std::pin::Pin;
+use jni::{
+    objects::{GlobalRef, JThrowable},
+    JNIEnv,
+};
+use jni_utils::future::JavaFuture;
+use std::{
+    collections::BTreeSet,
+    convert::TryFrom,
+    fmt::{Debug, Formatter},
+    pin::Pin,
+};
 
-#[derive(Clone, Debug)]
-pub struct Peripheral;
+use super::jni::{global_jvm, objects::JPeripheral};
+
+#[derive(Clone)]
+pub struct Peripheral {
+    addr: BDAddr,
+    internal: GlobalRef,
+}
+
+impl Peripheral {
+    pub(crate) fn new(env: &JNIEnv, addr: BDAddr) -> Result<Self> {
+        let obj = JPeripheral::new(env, addr)?;
+        Ok(Self {
+            addr,
+            internal: env.new_global_ref(obj)?,
+        })
+    }
+
+    fn with_obj<T, E>(
+        &self,
+        f: impl FnOnce(&JNIEnv, JPeripheral) -> std::result::Result<T, E>,
+    ) -> std::result::Result<T, E>
+    where
+        E: From<::jni::errors::Error>,
+    {
+        let guard = global_jvm().attach_current_thread()?;
+        let env = &*guard;
+        let obj = JPeripheral::from_env(env, self.internal.as_obj())?;
+        f(env, obj)
+    }
+}
+
+impl Debug for Peripheral {
+    fn fmt(&self, fmt: &mut Formatter) -> std::result::Result<(), std::fmt::Error> {
+        write!(fmt, "{:?}", self.internal.as_obj())
+    }
+}
 
 #[async_trait]
 impl api::Peripheral for Peripheral {
     fn address(&self) -> BDAddr {
-        panic!("TODO")
+        self.addr
     }
 
     async fn properties(&self) -> Result<Option<PeripheralProperties>> {
@@ -25,15 +68,39 @@ impl api::Peripheral for Peripheral {
     }
 
     async fn is_connected(&self) -> Result<bool> {
-        Err(Error::NotSupported("TODO".to_string()))
+        self.with_obj(|_env, obj| Ok(obj.is_connected()?))
     }
 
     async fn connect(&self) -> Result<()> {
-        Err(Error::NotSupported("TODO".to_string()))
+        let future = self.with_obj(|_env, obj| JavaFuture::try_from(obj.connect()?))?;
+        match future.await? {
+            Ok(_) => Ok(()),
+            Err(ex) => self.with_obj(|env, _obj| {
+                let ex: JThrowable = ex.as_obj().into();
+                Err(
+                    if env.is_instance_of(
+                        ex,
+                        "com/nonpolynomial/btleplug/android/impl/NotConnectedException",
+                    )? {
+                        Error::NotConnected
+                    } else if env.is_instance_of(
+                        ex,
+                        "com/nonpolynomial/btleplug/android/impl/PermissionDeniedException",
+                    )? {
+                        Error::PermissionDenied
+                    } else {
+                        env.throw(ex)?; // Something else, so pass it back to Java.
+                        Error::Other(Box::new(::jni::errors::Error::JavaException))
+                    },
+                )
+            }),
+        }
     }
 
     async fn disconnect(&self) -> Result<()> {
-        Err(Error::NotSupported("TODO".to_string()))
+        let future = self.with_obj(|_env, obj| JavaFuture::try_from(obj.disconnect()?))?;
+        future.await?;
+        Ok(())
     }
 
     async fn discover_characteristics(&self) -> Result<Vec<Characteristic>> {
