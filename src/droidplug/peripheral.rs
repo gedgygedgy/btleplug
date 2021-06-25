@@ -99,8 +99,14 @@ impl api::Peripheral for Peripheral {
 
     async fn disconnect(&self) -> Result<()> {
         let future = self.with_obj(|_env, obj| JavaFuture::try_from(obj.disconnect()?))?;
-        future.await?;
-        Ok(())
+        match future.await? {
+            Ok(_) => Ok(()),
+            Err(ex) => self.with_obj(|env, _obj| {
+                let ex: JThrowable = ex.as_obj().into();
+                env.throw(ex)?;
+                Err(Error::Other(Box::new(::jni::errors::Error::JavaException)))
+            }),
+        }
     }
 
     async fn discover_characteristics(&self) -> Result<Vec<Characteristic>> {
