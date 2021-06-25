@@ -2,6 +2,7 @@ use jni::{
     errors::Result,
     objects::{JClass, JMethodID, JObject},
     signature::{JavaType, Primitive},
+    sys::jint,
     JNIEnv,
 };
 use jni_utils::{future::JFuture, uuid::JUuid};
@@ -16,6 +17,7 @@ pub struct JPeripheral<'a: 'b, 'b> {
     is_connected: JMethodID<'a>,
     discover_characteristics: JMethodID<'a>,
     read: JMethodID<'a>,
+    write: JMethodID<'a>,
     env: &'b JNIEnv<'a>,
 }
 
@@ -56,6 +58,11 @@ impl<'a: 'b, 'b> JPeripheral<'a, 'b> {
             "read",
             "(Ljava/util/UUID;)Lgedgygedgy/rust/future/Future;",
         )?;
+        let write = env.get_method_id(
+            &class,
+            "write",
+            "(Ljava/util/UUID;[BI)Lgedgygedgy/rust/future/Future;",
+        )?;
         Ok(Self {
             internal: obj,
             connect,
@@ -63,6 +70,7 @@ impl<'a: 'b, 'b> JPeripheral<'a, 'b> {
             is_connected,
             discover_characteristics,
             read,
+            write,
             env,
         })
     }
@@ -132,6 +140,24 @@ impl<'a: 'b, 'b> JPeripheral<'a, 'b> {
                 self.read,
                 JavaType::Object("Lgedgygedgy/rust/future/Future;".to_string()),
                 &[uuid.into()],
+            )?
+            .l()?;
+        JFuture::from_env(self.env, future_obj)
+    }
+
+    pub fn write(
+        &self,
+        uuid: JUuid<'a, 'b>,
+        data: JObject<'a>,
+        write_type: jint,
+    ) -> Result<JFuture<'a, 'b>> {
+        let future_obj = self
+            .env
+            .call_method_unchecked(
+                self.internal,
+                self.write,
+                JavaType::Object("Lgedgygedgy/rust/future/Future;".to_string()),
+                &[uuid.into(), data.into(), write_type.into()],
             )?
             .l()?;
         JFuture::from_env(self.env, future_obj)

@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use futures::stream::Stream;
 use jni::{
     objects::{GlobalRef, JList, JThrowable},
+    sys::jint,
     JNIEnv,
 };
 use jni_utils::{future::JavaFuture, uuid::JUuid};
@@ -14,6 +15,7 @@ use std::{
     convert::TryFrom,
     fmt::{Debug, Formatter},
     pin::Pin,
+    slice::from_raw_parts_mut,
 };
 
 use super::jni::{
@@ -143,7 +145,30 @@ impl api::Peripheral for Peripheral {
         data: &[u8],
         write_type: WriteType,
     ) -> Result<()> {
-        Err(Error::NotSupported("TODO".to_string()))
+        let future = self.with_obj(|env, obj| {
+            let uuid = JUuid::new(env, characteristic.uuid)?;
+            let data_obj = env.new_byte_array(data.len() as jint)?;
+            let data_arr =
+                env.get_byte_array_elements(data_obj, jni::objects::ReleaseMode::CopyBack)?;
+            let data_slice = unsafe { from_raw_parts_mut(data_arr.as_ptr(), data.len()) };
+            for i in 0..data.len() {
+                data_slice[i] = data[i] as i8;
+            }
+            data_arr.commit()?;
+            let write_type = match write_type {
+                WriteType::WithResponse => 2,
+                WriteType::WithoutResponse => 1,
+            };
+            JavaFuture::try_from(obj.write(uuid, data_obj.into(), write_type)?)
+        })?;
+        match future.await? {
+            Ok(_) => Ok(()),
+            Err(ex) => self.with_obj(|env, _obj| {
+                let ex: JThrowable = ex.as_obj().into();
+                env.throw(ex)?;
+                Err(Error::Other(Box::new(::jni::errors::Error::JavaException)))
+            }),
+        }
     }
 
     async fn read(&self, characteristic: &Characteristic) -> Result<Vec<u8>> {

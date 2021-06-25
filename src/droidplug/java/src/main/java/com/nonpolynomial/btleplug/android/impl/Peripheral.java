@@ -137,6 +137,39 @@ class Peripheral {
         return waker.getFuture();
     }
 
+    public Future<Void> write(UUID uuid, byte[] data, int writeType) {
+        Future.Waker<Void> waker = Future.create();
+        synchronized (this) {
+            this.queueCommand(() -> {
+                this.asyncWithWaker(waker, () -> {
+                    if (!this.connected) {
+                        throw new NotConnectedException();
+                    }
+
+                    BluetoothGattCharacteristic characteristic = this.getCharacteristicByUuid(uuid);
+                    characteristic.setValue(data);
+                    characteristic.setWriteType(writeType);
+                    this.setCommandCallback(new CommandCallback() {
+                        @Override
+                        public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+                            Peripheral.this.asyncWithWaker(waker, () -> {
+                                if (!characteristic.getUuid().equals(uuid)) {
+                                    throw new UnexpectedCharacteristicException();
+                                }
+
+                                Peripheral.this.wakeCommand(waker, null);
+                            });
+                        }
+                    });
+                    if (!this.gatt.writeCharacteristic(characteristic)) {
+                        throw new RuntimeException("Unable to read characteristic");
+                    }
+                });
+            });
+        }
+        return waker.getFuture();
+    }
+
     public Future<List<BluetoothGattCharacteristic>> discoverCharacteristics() {
         Future.Waker<List<BluetoothGattCharacteristic>> waker = Future.create();
         synchronized (this) {
