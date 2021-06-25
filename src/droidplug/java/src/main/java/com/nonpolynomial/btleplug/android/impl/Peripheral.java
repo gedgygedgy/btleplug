@@ -106,7 +106,7 @@ class Peripheral {
         return this.connected;
     }
 
-    public Future<byte[]> read(UUID uuid, int properties) {
+    public Future<byte[]> read(UUID uuid) {
         Future.Waker<byte[]> waker = Future.create();
         synchronized (this) {
             this.queueCommand(() -> {
@@ -115,7 +115,7 @@ class Peripheral {
                         throw new NotConnectedException();
                     }
 
-                    BluetoothGattCharacteristic characteristic = new BluetoothGattCharacteristic(uuid, properties, BluetoothGattCharacteristic.PERMISSION_READ);
+                    BluetoothGattCharacteristic characteristic = this.getCharacteristicByUuid(uuid);
                     this.setCommandCallback(new CommandCallback() {
                         @Override
                         public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
@@ -173,6 +173,16 @@ class Peripheral {
             }
         }
         return result;
+    }
+
+    private BluetoothGattCharacteristic getCharacteristicByUuid(UUID uuid) {
+        for (BluetoothGattCharacteristic characteristic : this.getCharacteristics()) {
+            if (characteristic.getUuid().equals(uuid)) {
+                return characteristic;
+            }
+        }
+
+        throw new NoSuchCharacteristicException();
     }
 
     private void queueCommand(Runnable callback) {

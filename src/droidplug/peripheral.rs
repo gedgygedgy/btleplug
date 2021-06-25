@@ -6,7 +6,6 @@ use async_trait::async_trait;
 use futures::stream::Stream;
 use jni::{
     objects::{GlobalRef, JList, JThrowable},
-    sys::jint,
     JNIEnv,
 };
 use jni_utils::{future::JavaFuture, uuid::JUuid};
@@ -152,7 +151,7 @@ impl api::Peripheral for Peripheral {
 
         let future = self.with_obj(|env, obj| {
             let uuid = JUuid::new(env, characteristic.uuid)?;
-            JavaFuture::try_from(obj.read(uuid, characteristic.properties.bits() as jint)?)
+            JavaFuture::try_from(obj.read(uuid)?)
         })?;
         match future.await? {
             Ok(result) => self.with_obj(|env, _obj| {

@@ -2,7 +2,6 @@ use jni::{
     errors::Result,
     objects::{JClass, JMethodID, JObject},
     signature::{JavaType, Primitive},
-    sys::jint,
     JNIEnv,
 };
 use jni_utils::{future::JFuture, uuid::JUuid};
@@ -55,7 +54,7 @@ impl<'a: 'b, 'b> JPeripheral<'a, 'b> {
         let read = env.get_method_id(
             &class,
             "read",
-            "(Ljava/util/UUID;I)Lgedgygedgy/rust/future/Future;",
+            "(Ljava/util/UUID;)Lgedgygedgy/rust/future/Future;",
         )?;
         Ok(Self {
             internal: obj,
@@ -125,14 +124,14 @@ impl<'a: 'b, 'b> JPeripheral<'a, 'b> {
         JFuture::from_env(self.env, future_obj)
     }
 
-    pub fn read(&self, uuid: JUuid<'a, 'b>, properties: jint) -> Result<JFuture<'a, 'b>> {
+    pub fn read(&self, uuid: JUuid<'a, 'b>) -> Result<JFuture<'a, 'b>> {
         let future_obj = self
             .env
             .call_method_unchecked(
                 self.internal,
                 self.read,
                 JavaType::Object("Lgedgygedgy/rust/future/Future;".to_string()),
-                &[uuid.into(), properties.into()],
+                &[uuid.into()],
             )?
             .l()?;
         JFuture::from_env(self.env, future_obj)
