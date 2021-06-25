@@ -5,10 +5,11 @@ use crate::{
 use async_trait::async_trait;
 use futures::stream::Stream;
 use jni::{
-    objects::{GlobalRef, JThrowable},
+    objects::{GlobalRef, JList, JThrowable},
+    sys::jint,
     JNIEnv,
 };
-use jni_utils::future::JavaFuture;
+use jni_utils::{future::JavaFuture, uuid::JUuid};
 use std::{
     collections::BTreeSet,
     convert::TryFrom,
@@ -16,7 +17,10 @@ use std::{
     pin::Pin,
 };
 
-use super::jni::{global_jvm, objects::JPeripheral};
+use super::jni::{
+    global_jvm,
+    objects::{JBluetoothGattCharacteristic, JPeripheral},
+};
 
 #[derive(Clone)]
 pub struct Peripheral {
@@ -110,7 +114,28 @@ impl api::Peripheral for Peripheral {
     }
 
     async fn discover_characteristics(&self) -> Result<Vec<Characteristic>> {
-        Err(Error::NotSupported("TODO".to_string()))
+        let future =
+            self.with_obj(|_env, obj| JavaFuture::try_from(obj.discover_characteristics()?))?;
+        match future.await? {
+            Ok(obj) => self.with_obj(|env, _obj| {
+                let list = JList::from_env(env, obj.as_obj())?;
+                let mut result = Vec::new();
+                for characteristic in list.iter()? {
+                    let characteristic =
+                        JBluetoothGattCharacteristic::from_env(env, characteristic)?;
+                    result.push(Characteristic {
+                        uuid: characteristic.get_uuid()?,
+                        properties: characteristic.get_properties()?,
+                    });
+                }
+                Ok(result)
+            }),
+            Err(ex) => self.with_obj(|env, _obj| {
+                let ex: JThrowable = ex.as_obj().into();
+                env.throw(ex)?;
+                Err(Error::Other(Box::new(::jni::errors::Error::JavaException)))
+            }),
+        }
     }
 
     async fn write(
@@ -123,7 +148,28 @@ impl api::Peripheral for Peripheral {
     }
 
     async fn read(&self, characteristic: &Characteristic) -> Result<Vec<u8>> {
-        Err(Error::NotSupported("TODO".to_string()))
+        use std::iter::FromIterator;
+
+        let future = self.with_obj(|env, obj| {
+            let uuid = JUuid::new(env, characteristic.uuid)?;
+            JavaFuture::try_from(obj.read(uuid, characteristic.properties.bits() as jint)?)
+        })?;
+        match future.await? {
+            Ok(result) => self.with_obj(|env, _obj| {
+                let result = env.get_byte_array_elements(
+                    result.as_obj().into_inner(),
+                    jni::objects::ReleaseMode::NoCopyBack,
+                )?;
+                let size = result.size()? as usize;
+                let v = unsafe { Vec::from_raw_parts(result.as_ptr(), size, size) };
+                Ok(Vec::from_iter(v.into_iter().map(|i| i as u8)))
+            }),
+            Err(ex) => self.with_obj(|env, _obj| {
+                let ex: JThrowable = ex.as_obj().into();
+                env.throw(ex)?;
+                Err(Error::Other(Box::new(::jni::errors::Error::JavaException)))
+            }),
+        }
     }
 
     async fn subscribe(&self, characteristic: &Characteristic) -> Result<()> {

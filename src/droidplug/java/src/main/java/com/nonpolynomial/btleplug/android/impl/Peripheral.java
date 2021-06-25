@@ -5,9 +5,13 @@ import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattService;
 
+import java.util.ArrayList;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Queue;
+import java.util.UUID;
 
 import gedgygedgy.rust.future.Future;
 
@@ -36,12 +40,12 @@ class Peripheral {
                         @Override
                         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
                             Peripheral.this.asyncWithWaker(waker, () -> {
-                                if (status == BluetoothGatt.GATT_SUCCESS) {
-                                    if (newState == BluetoothGatt.STATE_CONNECTED) {
-                                        Peripheral.this.wakeCommand(waker, null);
-                                    }
-                                } else {
+                                if (status != BluetoothGatt.GATT_SUCCESS) {
                                     throw new NotConnectedException();
+                                }
+
+                                if (newState == BluetoothGatt.STATE_CONNECTED) {
+                                    Peripheral.this.wakeCommand(waker, null);
                                 }
                             });
                         }
@@ -80,12 +84,12 @@ class Peripheral {
                             @Override
                             public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
                                 Peripheral.this.asyncWithWaker(waker, () -> {
-                                    if (status == BluetoothGatt.GATT_SUCCESS) {
-                                        if (newState == BluetoothGatt.STATE_DISCONNECTED) {
-                                            Peripheral.this.wakeCommand(waker, null);
-                                        }
-                                    } else {
+                                    if (status != BluetoothGatt.GATT_SUCCESS) {
                                         throw new RuntimeException("Unable to disconnect");
+                                    }
+
+                                    if (newState == BluetoothGatt.STATE_DISCONNECTED) {
+                                        Peripheral.this.wakeCommand(waker, null);
                                     }
                                 });
                             }
@@ -100,6 +104,75 @@ class Peripheral {
 
     public boolean isConnected() {
         return this.connected;
+    }
+
+    public Future<byte[]> read(UUID uuid, int properties) {
+        Future.Waker<byte[]> waker = Future.create();
+        synchronized (this) {
+            this.queueCommand(() -> {
+                this.asyncWithWaker(waker, () -> {
+                    if (!this.connected) {
+                        throw new NotConnectedException();
+                    }
+
+                    BluetoothGattCharacteristic characteristic = new BluetoothGattCharacteristic(uuid, properties, BluetoothGattCharacteristic.PERMISSION_READ);
+                    this.setCommandCallback(new CommandCallback() {
+                        @Override
+                        public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+                            Peripheral.this.asyncWithWaker(waker, () -> {
+                                if (!characteristic.getUuid().equals(uuid)) {
+                                    throw new UnexpectedCharacteristicException();
+                                }
+
+                                Peripheral.this.wakeCommand(waker, characteristic.getValue());
+                            });
+                        }
+                    });
+                    if (!this.gatt.readCharacteristic(characteristic)) {
+                        throw new RuntimeException("Unable to read characteristic");
+                    }
+                });
+            });
+        }
+        return waker.getFuture();
+    }
+
+    public Future<List<BluetoothGattCharacteristic>> discoverCharacteristics() {
+        Future.Waker<List<BluetoothGattCharacteristic>> waker = Future.create();
+        synchronized (this) {
+            this.queueCommand(() -> {
+                this.asyncWithWaker(waker, () -> {
+                    if (!this.connected) {
+                        throw new NotConnectedException();
+                    }
+
+                    this.setCommandCallback(new CommandCallback() {
+                        @Override
+                        public void onServicesDiscovered(BluetoothGatt gatt, int status) {
+                            if (status != BluetoothGatt.GATT_SUCCESS) {
+                                throw new RuntimeException("Unable to discover services");
+                            }
+
+                            Peripheral.this.wakeCommand(waker, Peripheral.this.getCharacteristics());
+                        }
+                    });
+                    if (!this.gatt.discoverServices()) {
+                        throw new RuntimeException("Unable to discover services");
+                    }
+                });
+            });
+        }
+        return waker.getFuture();
+    }
+
+    private List<BluetoothGattCharacteristic> getCharacteristics() {
+        List<BluetoothGattCharacteristic> result = new ArrayList<>();
+        if (this.gatt != null) {
+            for (BluetoothGattService service : this.gatt.getServices()) {
+                result.addAll(service.getCharacteristics());
+            }
+        }
+        return result;
     }
 
     private void queueCommand(Runnable callback) {
@@ -176,6 +249,15 @@ class Peripheral {
                 }
             }
         }
+
+        @Override
+        public void onServicesDiscovered(BluetoothGatt gatt, int status) {
+            synchronized (Peripheral.this) {
+                if (Peripheral.this.commandCallback != null) {
+                    Peripheral.this.commandCallback.onServicesDiscovered(gatt, status);
+                }
+            }
+        }
     }
 
     private static abstract class CommandCallback extends BluetoothGattCallback {
@@ -191,6 +273,11 @@ class Peripheral {
 
         @Override
         public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+            throw new UnexpectedCallbackException();
+        }
+
+        @Override
+        public void onServicesDiscovered(BluetoothGatt gatt, int status) {
             throw new UnexpectedCallbackException();
         }
     }

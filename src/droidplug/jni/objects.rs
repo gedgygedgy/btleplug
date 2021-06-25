@@ -2,17 +2,21 @@ use jni::{
     errors::Result,
     objects::{JClass, JMethodID, JObject},
     signature::{JavaType, Primitive},
+    sys::jint,
     JNIEnv,
 };
-use jni_utils::future::JFuture;
+use jni_utils::{future::JFuture, uuid::JUuid};
+use uuid::Uuid;
 
-use crate::api::BDAddr;
+use crate::api::{BDAddr, CharPropFlags};
 
 pub struct JPeripheral<'a: 'b, 'b> {
     internal: JObject<'a>,
     connect: JMethodID<'a>,
     disconnect: JMethodID<'a>,
     is_connected: JMethodID<'a>,
+    discover_characteristics: JMethodID<'a>,
+    read: JMethodID<'a>,
     env: &'b JNIEnv<'a>,
 }
 
@@ -43,11 +47,23 @@ impl<'a: 'b, 'b> JPeripheral<'a, 'b> {
         let disconnect =
             env.get_method_id(&class, "disconnect", "()Lgedgygedgy/rust/future/Future;")?;
         let is_connected = env.get_method_id(&class, "isConnected", "()Z")?;
+        let discover_characteristics = env.get_method_id(
+            &class,
+            "discoverCharacteristics",
+            "()Lgedgygedgy/rust/future/Future;",
+        )?;
+        let read = env.get_method_id(
+            &class,
+            "read",
+            "(Ljava/util/UUID;I)Lgedgygedgy/rust/future/Future;",
+        )?;
         Ok(Self {
             internal: obj,
             connect,
             disconnect,
             is_connected,
+            discover_characteristics,
+            read,
             env,
         })
     }
@@ -94,5 +110,81 @@ impl<'a: 'b, 'b> JPeripheral<'a, 'b> {
                 &[],
             )?
             .z()
+    }
+
+    pub fn discover_characteristics(&self) -> Result<JFuture<'a, 'b>> {
+        let future_obj = self
+            .env
+            .call_method_unchecked(
+                self.internal,
+                self.discover_characteristics,
+                JavaType::Object("Lgedgygedgy/rust/future/Future;".to_string()),
+                &[],
+            )?
+            .l()?;
+        JFuture::from_env(self.env, future_obj)
+    }
+
+    pub fn read(&self, uuid: JUuid<'a, 'b>, properties: jint) -> Result<JFuture<'a, 'b>> {
+        let future_obj = self
+            .env
+            .call_method_unchecked(
+                self.internal,
+                self.read,
+                JavaType::Object("Lgedgygedgy/rust/future/Future;".to_string()),
+                &[uuid.into(), properties.into()],
+            )?
+            .l()?;
+        JFuture::from_env(self.env, future_obj)
+    }
+}
+
+pub struct JBluetoothGattCharacteristic<'a: 'b, 'b> {
+    internal: JObject<'a>,
+    get_uuid: JMethodID<'a>,
+    get_properties: JMethodID<'a>,
+    env: &'b JNIEnv<'a>,
+}
+
+impl<'a: 'b, 'b> JBluetoothGattCharacteristic<'a, 'b> {
+    pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
+        let class =
+            env.auto_local(env.find_class("android/bluetooth/BluetoothGattCharacteristic")?);
+
+        let get_uuid = env.get_method_id(&class, "getUuid", "()Ljava/util/UUID;")?;
+        let get_properties = env.get_method_id(&class, "getProperties", "()I")?;
+        Ok(Self {
+            internal: obj,
+            get_uuid,
+            get_properties,
+            env,
+        })
+    }
+
+    pub fn get_uuid(&self) -> Result<Uuid> {
+        let obj = self
+            .env
+            .call_method_unchecked(
+                self.internal,
+                self.get_uuid,
+                JavaType::Object("Ljava/util/UUID;".to_string()),
+                &[],
+            )?
+            .l()?;
+        let uuid_obj = JUuid::from_env(self.env, obj)?;
+        Ok(uuid_obj.as_uuid()?)
+    }
+
+    pub fn get_properties(&self) -> Result<CharPropFlags> {
+        let flags = self
+            .env
+            .call_method_unchecked(
+                self.internal,
+                self.get_properties,
+                JavaType::Primitive(Primitive::Int),
+                &[],
+            )?
+            .i()?;
+        Ok(CharPropFlags::from_bits_truncate(flags as u8))
     }
 }
