@@ -14,6 +14,7 @@ import java.util.Queue;
 import java.util.UUID;
 
 import gedgygedgy.rust.future.Future;
+import gedgygedgy.rust.future.SimpleFuture;
 
 @SuppressWarnings("unused") // Native code uses this class.
 class Peripheral {
@@ -32,27 +33,27 @@ class Peripheral {
     }
 
     public Future<Void> connect() {
-        Future.Waker<Void> waker = Future.create();
+        SimpleFuture<Void> future = new SimpleFuture<>();
         synchronized (this) {
             this.queueCommand(() -> {
-                this.asyncWithWaker(waker, () -> {
+                this.asyncWithFuture(future, () -> {
                     CommandCallback callback = new CommandCallback() {
                         @Override
                         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
-                            Peripheral.this.asyncWithWaker(waker, () -> {
+                            Peripheral.this.asyncWithFuture(future, () -> {
                                 if (status != BluetoothGatt.GATT_SUCCESS) {
                                     throw new NotConnectedException();
                                 }
 
                                 if (newState == BluetoothGatt.STATE_CONNECTED) {
-                                    Peripheral.this.wakeCommand(waker, null);
+                                    Peripheral.this.wakeCommand(future, null);
                                 }
                             });
                         }
                     };
 
                     if (this.connected) {
-                        Peripheral.this.wakeCommand(waker, null);
+                        Peripheral.this.wakeCommand(future, null);
                     } else if (this.gatt == null) {
                         try {
                             this.setCommandCallback(callback);
@@ -69,27 +70,27 @@ class Peripheral {
                 });
             });
         }
-        return waker.getFuture();
+        return future;
     }
 
     public Future<Void> disconnect() {
-        Future.Waker<Void> waker = Future.create();
+        SimpleFuture<Void> future = new SimpleFuture<>();
         synchronized (this) {
             this.queueCommand(() -> {
-                this.asyncWithWaker(waker, () -> {
+                this.asyncWithFuture(future, () -> {
                     if (!this.connected) {
-                        Peripheral.this.wakeCommand(waker, null);
+                        Peripheral.this.wakeCommand(future, null);
                     } else {
                         this.setCommandCallback(new CommandCallback() {
                             @Override
                             public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
-                                Peripheral.this.asyncWithWaker(waker, () -> {
+                                Peripheral.this.asyncWithFuture(future, () -> {
                                     if (status != BluetoothGatt.GATT_SUCCESS) {
                                         throw new RuntimeException("Unable to disconnect");
                                     }
 
                                     if (newState == BluetoothGatt.STATE_DISCONNECTED) {
-                                        Peripheral.this.wakeCommand(waker, null);
+                                        Peripheral.this.wakeCommand(future, null);
                                     }
                                 });
                             }
@@ -99,7 +100,7 @@ class Peripheral {
                 });
             });
         }
-        return waker.getFuture();
+        return future;
     }
 
     public boolean isConnected() {
@@ -107,10 +108,10 @@ class Peripheral {
     }
 
     public Future<byte[]> read(UUID uuid) {
-        Future.Waker<byte[]> waker = Future.create();
+        SimpleFuture<byte[]> future = new SimpleFuture<>();
         synchronized (this) {
             this.queueCommand(() -> {
-                this.asyncWithWaker(waker, () -> {
+                this.asyncWithFuture(future, () -> {
                     if (!this.connected) {
                         throw new NotConnectedException();
                     }
@@ -119,12 +120,12 @@ class Peripheral {
                     this.setCommandCallback(new CommandCallback() {
                         @Override
                         public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
-                            Peripheral.this.asyncWithWaker(waker, () -> {
+                            Peripheral.this.asyncWithFuture(future, () -> {
                                 if (!characteristic.getUuid().equals(uuid)) {
                                     throw new UnexpectedCharacteristicException();
                                 }
 
-                                Peripheral.this.wakeCommand(waker, characteristic.getValue());
+                                Peripheral.this.wakeCommand(future, characteristic.getValue());
                             });
                         }
                     });
@@ -134,14 +135,14 @@ class Peripheral {
                 });
             });
         }
-        return waker.getFuture();
+        return future;
     }
 
     public Future<Void> write(UUID uuid, byte[] data, int writeType) {
-        Future.Waker<Void> waker = Future.create();
+        SimpleFuture<Void> future = new SimpleFuture<>();
         synchronized (this) {
             this.queueCommand(() -> {
-                this.asyncWithWaker(waker, () -> {
+                this.asyncWithFuture(future, () -> {
                     if (!this.connected) {
                         throw new NotConnectedException();
                     }
@@ -152,12 +153,12 @@ class Peripheral {
                     this.setCommandCallback(new CommandCallback() {
                         @Override
                         public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
-                            Peripheral.this.asyncWithWaker(waker, () -> {
+                            Peripheral.this.asyncWithFuture(future, () -> {
                                 if (!characteristic.getUuid().equals(uuid)) {
                                     throw new UnexpectedCharacteristicException();
                                 }
 
-                                Peripheral.this.wakeCommand(waker, null);
+                                Peripheral.this.wakeCommand(future, null);
                             });
                         }
                     });
@@ -167,14 +168,14 @@ class Peripheral {
                 });
             });
         }
-        return waker.getFuture();
+        return future;
     }
 
     public Future<List<BluetoothGattCharacteristic>> discoverCharacteristics() {
-        Future.Waker<List<BluetoothGattCharacteristic>> waker = Future.create();
+        SimpleFuture<List<BluetoothGattCharacteristic>> future = new SimpleFuture<>();
         synchronized (this) {
             this.queueCommand(() -> {
-                this.asyncWithWaker(waker, () -> {
+                this.asyncWithFuture(future, () -> {
                     if (!this.connected) {
                         throw new NotConnectedException();
                     }
@@ -186,7 +187,7 @@ class Peripheral {
                                 throw new RuntimeException("Unable to discover services");
                             }
 
-                            Peripheral.this.wakeCommand(waker, Peripheral.this.getCharacteristics());
+                            Peripheral.this.wakeCommand(future, Peripheral.this.getCharacteristics());
                         }
                     });
                     if (!this.gatt.discoverServices()) {
@@ -195,7 +196,7 @@ class Peripheral {
                 });
             });
         }
-        return waker.getFuture();
+        return future;
     }
 
     private List<BluetoothGattCharacteristic> getCharacteristics() {
@@ -243,16 +244,16 @@ class Peripheral {
         }
     }
 
-    private <T> void wakeCommand(Future.Waker<T> waker, T result) {
-        waker.wake(result);
+    private <T> void wakeCommand(SimpleFuture<T> future, T result) {
+        future.wake(result);
         this.runNextCommand();
     }
 
-    private <T> void asyncWithWaker(Future.Waker<T> waker, Runnable callback) {
+    private <T> void asyncWithFuture(SimpleFuture<T> future, Runnable callback) {
         try {
             callback.run();
         } catch (Throwable ex) {
-            waker.wakeWithThrowable(ex);
+            future.wakeWithThrowable(ex);
             this.runNextCommand();
         }
     }
