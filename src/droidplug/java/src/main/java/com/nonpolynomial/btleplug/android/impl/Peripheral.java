@@ -199,6 +199,26 @@ class Peripheral {
         return future;
     }
 
+    public Future<Void> setCharacteristicNotification(UUID uuid, boolean enable) {
+        SimpleFuture<Void> future = new SimpleFuture<>();
+        synchronized (this) {
+            this.queueCommand(() -> {
+                this.asyncWithFuture(future, () -> {
+                    if (!this.connected) {
+                        throw new NotConnectedException();
+                    }
+
+                    if (!this.gatt.setCharacteristicNotification(this.getCharacteristicByUuid(uuid), enable)) {
+                        throw new RuntimeException("Unable to set characteristic notification");
+                    }
+
+                    future.wake(null);
+                });
+            });
+        }
+        return future;
+    }
+
     private List<BluetoothGattCharacteristic> getCharacteristics() {
         List<BluetoothGattCharacteristic> result = new ArrayList<>();
         if (this.gatt != null) {

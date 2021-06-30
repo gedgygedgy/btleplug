@@ -18,6 +18,7 @@ pub struct JPeripheral<'a: 'b, 'b> {
     discover_characteristics: JMethodID<'a>,
     read: JMethodID<'a>,
     write: JMethodID<'a>,
+    set_characteristic_notification: JMethodID<'a>,
     env: &'b JNIEnv<'a>,
 }
 
@@ -63,6 +64,11 @@ impl<'a: 'b, 'b> JPeripheral<'a, 'b> {
             "write",
             "(Ljava/util/UUID;[BI)Lgedgygedgy/rust/future/Future;",
         )?;
+        let set_characteristic_notification = env.get_method_id(
+            &class,
+            "setCharacteristicNotification",
+            "(Ljava/util/UUID;Z)Lgedgygedgy/rust/future/Future;",
+        )?;
         Ok(Self {
             internal: obj,
             connect,
@@ -71,6 +77,7 @@ impl<'a: 'b, 'b> JPeripheral<'a, 'b> {
             discover_characteristics,
             read,
             write,
+            set_characteristic_notification,
             env,
         })
     }
@@ -158,6 +165,23 @@ impl<'a: 'b, 'b> JPeripheral<'a, 'b> {
                 self.write,
                 JavaType::Object("Lgedgygedgy/rust/future/Future;".to_string()),
                 &[uuid.into(), data.into(), write_type.into()],
+            )?
+            .l()?;
+        JFuture::from_env(self.env, future_obj)
+    }
+
+    pub fn set_characteristic_notification(
+        &self,
+        uuid: JUuid<'a, 'b>,
+        enable: bool,
+    ) -> Result<JFuture<'a, 'b>> {
+        let future_obj = self
+            .env
+            .call_method_unchecked(
+                self.internal,
+                self.set_characteristic_notification,
+                JavaType::Object("Lgedgygedgy/rust/future/Future;".to_string()),
+                &[uuid.into(), enable.into()],
             )?
             .l()?;
         JFuture::from_env(self.env, future_obj)

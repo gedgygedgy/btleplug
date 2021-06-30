@@ -49,6 +49,39 @@ impl Peripheral {
         let obj = JPeripheral::from_env(&env, self.internal.as_obj())?;
         f(&env, obj)
     }
+
+    async fn set_characteristic_notification(
+        &self,
+        characteristic: &Characteristic,
+        enable: bool,
+    ) -> Result<()> {
+        let future = self.with_obj(|env, obj| {
+            let uuid_obj = JUuid::new(env, characteristic.uuid)?;
+            JavaFuture::try_from(obj.set_characteristic_notification(uuid_obj, enable)?)
+        })?;
+        match future.await? {
+            Ok(_) => Ok(()),
+            Err(ex) => self.with_obj(|env, _obj| {
+                let ex: JThrowable = ex.as_obj().into();
+                Err(
+                    if env.is_instance_of(
+                        ex,
+                        "com/nonpolynomial/btleplug/android/impl/NotConnectedException",
+                    )? {
+                        Error::NotConnected
+                    } else if env.is_instance_of(
+                        ex,
+                        "com/nonpolynomial/btleplug/android/impl/PermissionDeniedException",
+                    )? {
+                        Error::PermissionDenied
+                    } else {
+                        env.throw(ex)?; // Something else, so pass it back to Java.
+                        Error::Other(Box::new(::jni::errors::Error::JavaException))
+                    },
+                )
+            }),
+        }
+    }
 }
 
 impl Debug for Peripheral {
@@ -196,11 +229,13 @@ impl api::Peripheral for Peripheral {
     }
 
     async fn subscribe(&self, characteristic: &Characteristic) -> Result<()> {
-        Err(Error::NotSupported("TODO".to_string()))
+        self.set_characteristic_notification(characteristic, true)
+            .await
     }
 
     async fn unsubscribe(&self, characteristic: &Characteristic) -> Result<()> {
-        Err(Error::NotSupported("TODO".to_string()))
+        self.set_characteristic_notification(characteristic, false)
+            .await
     }
 
     async fn notifications(&self) -> Result<Pin<Box<dyn Stream<Item = ValueNotification>>>> {
