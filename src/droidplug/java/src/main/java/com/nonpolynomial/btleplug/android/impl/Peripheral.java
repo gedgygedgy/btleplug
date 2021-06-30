@@ -212,7 +212,7 @@ class Peripheral {
                         throw new RuntimeException("Unable to set characteristic notification");
                     }
 
-                    future.wake(null);
+                    Peripheral.this.wakeCommand(future, null);
                 });
             });
         }
