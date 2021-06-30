@@ -261,7 +261,6 @@ impl<'a: 'b, 'b> JBluetoothGattCharacteristic<'a, 'b> {
     }
 
     pub fn get_value(&self) -> Result<Vec<u8>> {
-        use std::iter::FromIterator;
         let value = self
             .env
             .call_method_unchecked(
@@ -271,12 +270,6 @@ impl<'a: 'b, 'b> JBluetoothGattCharacteristic<'a, 'b> {
                 &[],
             )?
             .l()?;
-
-        let result = self
-            .env
-            .get_byte_array_elements(*value, jni::objects::ReleaseMode::NoCopyBack)?;
-        let size = result.size()? as usize;
-        let v = unsafe { Vec::from_raw_parts(result.as_ptr(), size, size) };
-        Ok(Vec::from_iter(v.into_iter().map(|i| i as u8)))
+        jni_utils::arrays::byte_array_to_vec(self.env, value.into_inner())
     }
 }

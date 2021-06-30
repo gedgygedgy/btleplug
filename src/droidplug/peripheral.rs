@@ -6,7 +6,6 @@ use async_trait::async_trait;
 use futures::stream::Stream;
 use jni::{
     objects::{GlobalRef, JList, JThrowable},
-    sys::jint,
     JNIEnv,
 };
 use jni_utils::{future::JavaFuture, stream::JavaStream, uuid::JUuid};
@@ -15,7 +14,6 @@ use std::{
     convert::TryFrom,
     fmt::{Debug, Formatter},
     pin::Pin,
-    slice::from_raw_parts_mut,
 };
 
 use super::jni::{
@@ -179,14 +177,7 @@ impl api::Peripheral for Peripheral {
     ) -> Result<()> {
         let future = self.with_obj(|env, obj| {
             let uuid = JUuid::new(env, characteristic.uuid)?;
-            let data_obj = env.new_byte_array(data.len() as jint)?;
-            let data_arr =
-                env.get_byte_array_elements(data_obj, jni::objects::ReleaseMode::CopyBack)?;
-            let data_slice = unsafe { from_raw_parts_mut(data_arr.as_ptr(), data.len()) };
-            for i in 0..data.len() {
-                data_slice[i] = data[i] as i8;
-            }
-            data_arr.commit()?;
+            let data_obj = jni_utils::arrays::slice_to_byte_array(env, data)?;
             let write_type = match write_type {
                 WriteType::WithResponse => 2,
                 WriteType::WithoutResponse => 1,
@@ -204,21 +195,16 @@ impl api::Peripheral for Peripheral {
     }
 
     async fn read(&self, characteristic: &Characteristic) -> Result<Vec<u8>> {
-        use std::iter::FromIterator;
-
         let future = self.with_obj(|env, obj| {
             let uuid = JUuid::new(env, characteristic.uuid)?;
             JavaFuture::try_from(obj.read(uuid)?)
         })?;
         match future.await? {
             Ok(result) => self.with_obj(|env, _obj| {
-                let result = env.get_byte_array_elements(
+                Ok(jni_utils::arrays::byte_array_to_vec(
+                    env,
                     result.as_obj().into_inner(),
-                    jni::objects::ReleaseMode::NoCopyBack,
-                )?;
-                let size = result.size()? as usize;
-                let v = unsafe { Vec::from_raw_parts(result.as_ptr(), size, size) };
-                Ok(Vec::from_iter(v.into_iter().map(|i| i as u8)))
+                )?)
             }),
             Err(ex) => self.with_obj(|env, _obj| {
                 let ex: JThrowable = ex.as_obj().into();
