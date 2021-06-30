@@ -9,7 +9,7 @@ use jni::{
     sys::jint,
     JNIEnv,
 };
-use jni_utils::{future::JavaFuture, uuid::JUuid};
+use jni_utils::{future::JavaFuture, stream::JavaStream, uuid::JUuid};
 use std::{
     collections::BTreeSet,
     convert::TryFrom,
@@ -239,6 +239,21 @@ impl api::Peripheral for Peripheral {
     }
 
     async fn notifications(&self) -> Result<Pin<Box<dyn Stream<Item = ValueNotification>>>> {
-        Err(Error::NotSupported("TODO".to_string()))
+        use futures::stream::StreamExt;
+        let stream = self.with_obj(|_env, obj| JavaStream::try_from(obj.get_notifications()?))?;
+        let stream = stream
+            .map(|item| match item {
+                Ok(item) => {
+                    let env = global_jvm().get_env()?;
+                    let item = item.as_obj();
+                    let characteristic = JBluetoothGattCharacteristic::from_env(&env, item)?;
+                    let uuid = characteristic.get_uuid()?;
+                    let value = characteristic.get_value()?;
+                    Ok(ValueNotification { uuid, value })
+                }
+                Err(err) => Err(err),
+            })
+            .filter_map(|item| async { item.ok() });
+        Ok(Box::pin(stream))
     }
 }
