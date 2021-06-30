@@ -52,8 +52,8 @@ impl Central for Adapter {
     }
 
     async fn add_peripheral(&self, address: BDAddr) -> Result<Peripheral> {
-        let guard = global_jvm().attach_current_thread()?;
-        let peripheral = Peripheral::new(&guard, address)?;
+        let env = global_jvm().get_env()?;
+        let peripheral = Peripheral::new(&env, address)?;
         self.add(address, peripheral.clone());
         Ok(peripheral)
     }

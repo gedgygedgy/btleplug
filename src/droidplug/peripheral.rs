@@ -45,10 +45,9 @@ impl Peripheral {
     where
         E: From<::jni::errors::Error>,
     {
-        let guard = global_jvm().attach_current_thread()?;
-        let env = &*guard;
-        let obj = JPeripheral::from_env(env, self.internal.as_obj())?;
-        f(env, obj)
+        let env = global_jvm().get_env()?;
+        let obj = JPeripheral::from_env(&env, self.internal.as_obj())?;
+        f(&env, obj)
     }
 }
 
