@@ -34,15 +34,17 @@ impl Adapter {
 
         let peripheral = match self.manager.peripheral(properties.address) {
             Some(p) => p,
-            None => {
-                let peripheral = Peripheral::new(&env, properties.address)?;
-                self.manager
-                    .add_peripheral(properties.address, peripheral.clone());
-                peripheral
-            }
+            None => self.add(properties.address)?,
         };
         peripheral.report_properties(properties);
 
+        Ok(peripheral)
+    }
+
+    fn add(&self, address: BDAddr) -> Result<Peripheral> {
+        let env = global_jvm().get_env()?;
+        let peripheral = Peripheral::new(&env, address)?;
+        self.manager.add_peripheral(address, peripheral.clone());
         Ok(peripheral)
     }
 }
@@ -74,9 +76,6 @@ impl Central for Adapter {
     }
 
     async fn add_peripheral(&self, address: BDAddr) -> Result<Peripheral> {
-        let env = global_jvm().get_env()?;
-        let peripheral = Peripheral::new(&env, address)?;
-        self.manager.add_peripheral(address, peripheral.clone());
-        Ok(peripheral)
+        self.add(address)
     }
 }
