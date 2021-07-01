@@ -47,8 +47,15 @@ impl Peripheral {
         })
     }
 
-    pub(crate) fn report_properties(&self, properties: PeripheralProperties) {
+    pub(crate) fn report_properties(&self, mut properties: PeripheralProperties) {
         let mut guard = self.shared.lock().unwrap();
+
+        properties.discovery_count = guard
+            .properties
+            .as_ref()
+            .map(|p| p.discovery_count + 1)
+            .unwrap_or(1);
+
         guard.properties = Some(properties);
     }
 
