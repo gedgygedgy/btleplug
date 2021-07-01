@@ -14,6 +14,7 @@ use std::{
     convert::TryFrom,
     fmt::{Debug, Formatter},
     pin::Pin,
+    sync::{Arc, Mutex},
 };
 
 use super::jni::{
@@ -21,10 +22,16 @@ use super::jni::{
     objects::{JBluetoothGattCharacteristic, JPeripheral},
 };
 
+struct PeripheralShared {
+    characteristics: BTreeSet<Characteristic>,
+    properties: Option<PeripheralProperties>,
+}
+
 #[derive(Clone)]
 pub struct Peripheral {
     addr: BDAddr,
     internal: GlobalRef,
+    shared: Arc<Mutex<PeripheralShared>>,
 }
 
 impl Peripheral {
@@ -33,7 +40,16 @@ impl Peripheral {
         Ok(Self {
             addr,
             internal: env.new_global_ref(obj)?,
+            shared: Arc::new(Mutex::new(PeripheralShared {
+                characteristics: BTreeSet::new(),
+                properties: None,
+            })),
         })
+    }
+
+    pub(crate) fn report_properties(&self, properties: PeripheralProperties) {
+        let mut guard = self.shared.lock().unwrap();
+        guard.properties = Some(properties);
     }
 
     fn with_obj<T, E>(
@@ -95,11 +111,13 @@ impl api::Peripheral for Peripheral {
     }
 
     async fn properties(&self) -> Result<Option<PeripheralProperties>> {
-        Err(Error::NotSupported("TODO".to_string()))
+        let guard = self.shared.lock().unwrap();
+        Ok((&guard.properties).clone())
     }
 
     fn characteristics(&self) -> BTreeSet<Characteristic> {
-        panic!("TODO")
+        let guard = self.shared.lock().unwrap();
+        (&guard.characteristics).clone()
     }
 
     async fn is_connected(&self) -> Result<bool> {
@@ -149,8 +167,11 @@ impl api::Peripheral for Peripheral {
             self.with_obj(|_env, obj| JavaFuture::try_from(obj.discover_characteristics()?))?;
         match future.await? {
             Ok(obj) => self.with_obj(|env, _obj| {
+                use std::iter::FromIterator;
+
                 let list = JList::from_env(env, obj.as_obj())?;
                 let mut result = Vec::new();
+
                 for characteristic in list.iter()? {
                     let characteristic =
                         JBluetoothGattCharacteristic::from_env(env, characteristic)?;
@@ -159,6 +180,10 @@ impl api::Peripheral for Peripheral {
                         properties: characteristic.get_properties()?,
                     });
                 }
+
+                let mut guard = self.shared.lock().unwrap();
+                guard.characteristics = BTreeSet::from_iter(result.clone());
+
                 Ok(result)
             }),
             Err(ex) => self.with_obj(|env, _obj| {

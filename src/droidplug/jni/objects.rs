@@ -1,14 +1,16 @@
 use jni::{
     errors::Result,
-    objects::{JClass, JMethodID, JObject},
+    objects::{JClass, JList, JMap, JMethodID, JObject, JString},
     signature::{JavaType, Primitive},
+    strings::JavaStr,
     sys::jint,
     JNIEnv,
 };
 use jni_utils::{future::JFuture, stream::JStream, uuid::JUuid};
+use std::{collections::HashMap, convert::TryFrom, iter::Iterator};
 use uuid::Uuid;
 
-use crate::api::{BDAddr, CharPropFlags};
+use crate::api::{BDAddr, CharPropFlags, PeripheralProperties};
 
 pub struct JPeripheral<'a: 'b, 'b> {
     internal: JObject<'a>,
@@ -271,5 +273,403 @@ impl<'a: 'b, 'b> JBluetoothGattCharacteristic<'a, 'b> {
             )?
             .l()?;
         jni_utils::arrays::byte_array_to_vec(self.env, value.into_inner())
+    }
+}
+
+pub struct JBluetoothDevice<'a: 'b, 'b> {
+    internal: JObject<'a>,
+    get_address: JMethodID<'a>,
+    env: &'b JNIEnv<'a>,
+}
+
+impl<'a: 'b, 'b> JBluetoothDevice<'a, 'b> {
+    pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
+        let class = env.auto_local(env.find_class("android/bluetooth/BluetoothDevice")?);
+
+        let get_address =
+            env.get_method_id(class.as_obj(), "getAddress", "()Ljava/lang/String;")?;
+        Ok(Self {
+            internal: obj,
+            get_address,
+            env,
+        })
+    }
+
+    pub fn get_address(&self) -> Result<JString<'a>> {
+        let obj = self
+            .env
+            .call_method_unchecked(
+                self.internal,
+                self.get_address,
+                JavaType::Object("Ljava/lang/String;".to_string()),
+                &[],
+            )?
+            .l()?;
+        Ok(obj.into())
+    }
+}
+
+pub struct JScanResult<'a: 'b, 'b> {
+    internal: JObject<'a>,
+    get_device: JMethodID<'a>,
+    get_scan_record: JMethodID<'a>,
+    env: &'b JNIEnv<'a>,
+}
+
+impl<'a: 'b, 'b> JScanResult<'a, 'b> {
+    pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
+        let class = env.auto_local(env.find_class("android/bluetooth/le/ScanResult")?);
+
+        let get_device = env.get_method_id(
+            class.as_obj(),
+            "getDevice",
+            "()Landroid/bluetooth/BluetoothDevice;",
+        )?;
+        let get_scan_record = env.get_method_id(
+            class.as_obj(),
+            "getScanRecord",
+            "()Landroid/bluetooth/le/ScanRecord;",
+        )?;
+        Ok(Self {
+            internal: obj,
+            get_device,
+            get_scan_record,
+            env,
+        })
+    }
+
+    pub fn get_device(&self) -> Result<JBluetoothDevice<'a, 'b>> {
+        let obj = self
+            .env
+            .call_method_unchecked(
+                self.internal,
+                self.get_device,
+                JavaType::Object("Landroid/bluetooth/BluetoothDevice;".to_string()),
+                &[],
+            )?
+            .l()?;
+        JBluetoothDevice::from_env(self.env, obj)
+    }
+
+    pub fn get_scan_record(&self) -> Result<JScanRecord<'a, 'b>> {
+        let obj = self
+            .env
+            .call_method_unchecked(
+                self.internal,
+                self.get_scan_record,
+                JavaType::Object("Landroid/bluetooth/le/ScanRecord;".to_string()),
+                &[],
+            )?
+            .l()?;
+        JScanRecord::from_env(self.env, obj)
+    }
+}
+
+impl<'a: 'b, 'b> TryFrom<JScanResult<'a, 'b>> for PeripheralProperties {
+    type Error = crate::Error;
+
+    fn try_from(result: JScanResult<'a, 'b>) -> std::result::Result<Self, Self::Error> {
+        use std::str::FromStr;
+
+        let device = result.get_device()?;
+
+        let addr_obj = device.get_address()?;
+        let addr_str = JavaStr::from_env(result.env, addr_obj)?;
+        let addr = BDAddr::from_str(
+            addr_str
+                .to_str()
+                .map_err(|e| Self::Error::Other(e.into()))?,
+        )?;
+
+        let record = result.get_scan_record()?;
+
+        let device_name_obj = record.get_device_name()?;
+        let device_name = if result
+            .env
+            .is_same_object(device_name_obj, JObject::null())?
+        {
+            None
+        } else {
+            let device_name_str = JavaStr::from_env(result.env, device_name_obj)?;
+            Some(
+                device_name_str
+                    .to_str()
+                    .map_err(|e| Self::Error::Other(e.into()))?
+                    .to_string(),
+            )
+        };
+
+        let tx_power_level = record.get_tx_power_level()?;
+        let tx_power_level = if tx_power_level == i32::MIN {
+            None
+        } else {
+            Some(tx_power_level as i8)
+        };
+
+        let manufacturer_specific_data_array = record.get_manufacturer_specific_data()?;
+        let mut manufacturer_data = HashMap::new();
+        for item in manufacturer_specific_data_array.iter() {
+            let (index, data) = item?;
+
+            let index = index as u16;
+            let data = jni_utils::arrays::byte_array_to_vec(result.env, data.into_inner())?;
+            manufacturer_data.insert(index, data);
+        }
+
+        let service_data_map = record.get_service_data()?;
+        let mut service_data = HashMap::new();
+        for (key, value) in service_data_map.iter()? {
+            let uuid = JParcelUuid::from_env(result.env, key)?
+                .get_uuid()?
+                .as_uuid()?;
+            let data = jni_utils::arrays::byte_array_to_vec(result.env, value.into_inner())?;
+            service_data.insert(uuid, data);
+        }
+
+        let services_list = record.get_service_uuids()?;
+        let mut services = Vec::new();
+        for obj in services_list.iter()? {
+            let uuid = JParcelUuid::from_env(result.env, obj)?
+                .get_uuid()?
+                .as_uuid()?;
+            services.push(uuid);
+        }
+
+        Ok(Self {
+            address: addr,
+            address_type: None,
+            local_name: device_name,
+            tx_power_level,
+            manufacturer_data,
+            service_data,
+            services,
+            discovery_count: 1,
+            has_scan_response: true,
+        })
+    }
+}
+
+pub struct JScanRecord<'a: 'b, 'b> {
+    internal: JObject<'a>,
+    get_device_name: JMethodID<'a>,
+    get_tx_power_level: JMethodID<'a>,
+    get_manufacturer_specific_data: JMethodID<'a>,
+    get_service_data: JMethodID<'a>,
+    get_service_uuids: JMethodID<'a>,
+    env: &'b JNIEnv<'a>,
+}
+
+impl<'a: 'b, 'b> JScanRecord<'a, 'b> {
+    pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
+        let class = env.auto_local(env.find_class("android/bluetooth/le/ScanRecord")?);
+
+        let get_device_name =
+            env.get_method_id(class.as_obj(), "getDeviceName", "()Ljava/lang/String;")?;
+        let get_tx_power_level = env.get_method_id(class.as_obj(), "getTxPowerLevel", "()I")?;
+        let get_manufacturer_specific_data = env.get_method_id(
+            class.as_obj(),
+            "getManufacturerSpecificData",
+            "()Landroid/util/SparseArray;",
+        )?;
+        let get_service_data =
+            env.get_method_id(class.as_obj(), "getServiceData", "()Ljava/util/Map;")?;
+        let get_service_uuids =
+            env.get_method_id(class.as_obj(), "getServiceUuids", "()Ljava/util/List;")?;
+        Ok(Self {
+            internal: obj,
+            get_device_name,
+            get_tx_power_level,
+            get_manufacturer_specific_data,
+            get_service_data,
+            get_service_uuids,
+            env,
+        })
+    }
+
+    pub fn get_device_name(&self) -> Result<JString<'a>> {
+        let obj = self
+            .env
+            .call_method_unchecked(
+                self.internal,
+                self.get_device_name,
+                JavaType::Object("Ljava/lang/String;".to_string()),
+                &[],
+            )?
+            .l()?;
+        Ok(obj.into())
+    }
+
+    pub fn get_tx_power_level(&self) -> Result<jint> {
+        self.env
+            .call_method_unchecked(
+                self.internal,
+                self.get_tx_power_level,
+                JavaType::Primitive(Primitive::Int),
+                &[],
+            )?
+            .i()
+    }
+
+    pub fn get_manufacturer_specific_data(&self) -> Result<JSparseArray<'a, 'b>> {
+        let obj = self
+            .env
+            .call_method_unchecked(
+                self.internal,
+                self.get_manufacturer_specific_data,
+                JavaType::Object("Landroid/util/SparseArray;".to_string()),
+                &[],
+            )?
+            .l()?;
+        JSparseArray::from_env(self.env, obj)
+    }
+
+    pub fn get_service_data(&self) -> Result<JMap<'a, 'b>> {
+        let obj = self
+            .env
+            .call_method_unchecked(
+                self.internal,
+                self.get_service_data,
+                JavaType::Object("Ljava/util/Map;".to_string()),
+                &[],
+            )?
+            .l()?;
+        JMap::from_env(self.env, obj)
+    }
+
+    pub fn get_service_uuids(&self) -> Result<JList<'a, 'b>> {
+        let obj = self
+            .env
+            .call_method_unchecked(
+                self.internal,
+                self.get_service_uuids,
+                JavaType::Object("Ljava/util/List;".to_string()),
+                &[],
+            )?
+            .l()?;
+        JList::from_env(self.env, obj)
+    }
+}
+
+#[derive(Clone)]
+pub struct JSparseArray<'a: 'b, 'b> {
+    internal: JObject<'a>,
+    size: JMethodID<'a>,
+    key_at: JMethodID<'a>,
+    value_at: JMethodID<'a>,
+    env: &'b JNIEnv<'a>,
+}
+
+impl<'a: 'b, 'b> JSparseArray<'a, 'b> {
+    pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
+        let class = env.auto_local(env.find_class("android/util/SparseArray")?);
+
+        let size = env.get_method_id(class.as_obj(), "size", "()I")?;
+        let key_at = env.get_method_id(class.as_obj(), "keyAt", "(I)I")?;
+        let value_at = env.get_method_id(class.as_obj(), "valueAt", "(I)Ljava/lang/Object;")?;
+        Ok(Self {
+            internal: obj,
+            size,
+            key_at,
+            value_at,
+            env,
+        })
+    }
+
+    pub fn size(&self) -> Result<jint> {
+        self.env
+            .call_method_unchecked(
+                self.internal,
+                self.size,
+                JavaType::Primitive(Primitive::Int),
+                &[],
+            )?
+            .i()
+    }
+
+    pub fn key_at(&self, index: jint) -> Result<jint> {
+        self.env
+            .call_method_unchecked(
+                self.internal,
+                self.key_at,
+                JavaType::Primitive(Primitive::Int),
+                &[index.into()],
+            )?
+            .i()
+    }
+
+    pub fn value_at(&self, index: jint) -> Result<JObject<'a>> {
+        self.env
+            .call_method_unchecked(
+                self.internal,
+                self.value_at,
+                JavaType::Object("Ljava/lang/Object;".to_string()),
+                &[index.into()],
+            )?
+            .l()
+    }
+
+    pub fn iter(&self) -> JSparseArrayIter<'a, 'b> {
+        JSparseArrayIter {
+            internal: self.clone(),
+            index: 0,
+        }
+    }
+}
+
+pub struct JSparseArrayIter<'a: 'b, 'b> {
+    internal: JSparseArray<'a, 'b>,
+    index: jint,
+}
+
+impl<'a: 'b, 'b> JSparseArrayIter<'a, 'b> {
+    fn next_internal(&mut self) -> Result<Option<(jint, JObject<'a>)>> {
+        let size = self.internal.size()?;
+        Ok(if self.index >= size {
+            None
+        } else {
+            let key = self.internal.key_at(self.index)?;
+            let value = self.internal.value_at(self.index)?;
+            self.index += 1;
+            Some((key, value))
+        })
+    }
+}
+
+impl<'a: 'b, 'b> Iterator for JSparseArrayIter<'a, 'b> {
+    type Item = Result<(jint, JObject<'a>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next_internal().transpose()
+    }
+}
+pub struct JParcelUuid<'a: 'b, 'b> {
+    internal: JObject<'a>,
+    get_uuid: JMethodID<'a>,
+    env: &'b JNIEnv<'a>,
+}
+
+impl<'a: 'b, 'b> JParcelUuid<'a, 'b> {
+    pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
+        let class = env.auto_local(env.find_class("android/os/ParcelUuid")?);
+
+        let get_uuid = env.get_method_id(class.as_obj(), "getUuid", "()Ljava/util/UUID;")?;
+        Ok(Self {
+            internal: obj,
+            get_uuid,
+            env,
+        })
+    }
+
+    pub fn get_uuid(&self) -> Result<JUuid<'a, 'b>> {
+        let obj = self
+            .env
+            .call_method_unchecked(
+                self.internal,
+                self.get_uuid,
+                JavaType::Object("Ljava/util/UUID;".to_string()),
+                &[],
+            )?
+            .l()?;
+        JUuid::from_env(self.env, obj)
     }
 }

@@ -1,11 +1,15 @@
-use super::{jni::global_jvm, peripheral::Peripheral};
+use super::{
+    jni::{global_jvm, objects::JScanResult},
+    peripheral::Peripheral,
+};
 use crate::{
-    api::{BDAddr, Central, CentralEvent},
+    api::{BDAddr, Central, CentralEvent, PeripheralProperties},
     common::adapter_manager::AdapterManager,
     Error, Result,
 };
 use async_trait::async_trait;
 use futures::stream::Stream;
+use jni::objects::JObject;
 use std::pin::Pin;
 
 #[derive(Clone)]
@@ -20,8 +24,26 @@ impl Adapter {
         }
     }
 
-    pub fn add(&self, addr: BDAddr, peripheral: Peripheral) {
-        self.manager.add_peripheral(addr, peripheral)
+    pub fn report_scan_result(&self, scan_result: JObject) -> Result<Peripheral> {
+        use std::convert::TryInto;
+
+        let env = global_jvm().get_env()?;
+        let scan_result = JScanResult::from_env(&env, scan_result)?;
+
+        let properties: PeripheralProperties = scan_result.try_into()?;
+
+        let peripheral = match self.manager.peripheral(properties.address) {
+            Some(p) => p,
+            None => {
+                let peripheral = Peripheral::new(&env, properties.address)?;
+                self.manager
+                    .add_peripheral(properties.address, peripheral.clone());
+                peripheral
+            }
+        };
+        peripheral.report_properties(properties);
+
+        Ok(peripheral)
     }
 }
 
@@ -54,7 +76,7 @@ impl Central for Adapter {
     async fn add_peripheral(&self, address: BDAddr) -> Result<Peripheral> {
         let env = global_jvm().get_env()?;
         let peripheral = Peripheral::new(&env, address)?;
-        self.add(address, peripheral.clone());
+        self.manager.add_peripheral(address, peripheral.clone());
         Ok(peripheral)
     }
 }
