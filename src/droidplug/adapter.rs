@@ -48,8 +48,7 @@ impl Adapter {
         match self.manager.peripheral(addr) {
             Some(p) => match properties {
                 Some(properties) => {
-                    p.report_properties(properties);
-                    self.manager.emit(CentralEvent::DeviceUpdated(addr));
+                    self.report_properties(&p, properties, false);
                     Ok(p)
                 }
                 None => {
@@ -60,8 +59,7 @@ impl Adapter {
             None => match properties {
                 Some(properties) => {
                     let p = self.add(addr)?;
-                    p.report_properties(properties);
-                    self.manager.emit(CentralEvent::DeviceDiscovered(addr));
+                    self.report_properties(&p, properties, true);
                     Ok(p)
                 }
                 None => Err(Error::DeviceNotFound),
@@ -74,6 +72,33 @@ impl Adapter {
         let peripheral = Peripheral::new(&env, address)?;
         self.manager.add_peripheral(address, peripheral.clone());
         Ok(peripheral)
+    }
+
+    fn report_properties(
+        &self,
+        peripheral: &Peripheral,
+        properties: PeripheralProperties,
+        new: bool,
+    ) {
+        peripheral.report_properties(properties.clone());
+        self.manager.emit(if new {
+            CentralEvent::DeviceDiscovered(properties.address)
+        } else {
+            CentralEvent::DeviceUpdated(properties.address)
+        });
+        self.manager
+            .emit(CentralEvent::ManufacturerDataAdvertisement {
+                address: properties.address,
+                manufacturer_data: properties.manufacturer_data,
+            });
+        self.manager.emit(CentralEvent::ServiceDataAdvertisement {
+            address: properties.address,
+            service_data: properties.service_data,
+        });
+        self.manager.emit(CentralEvent::ServicesAdvertisement {
+            address: properties.address,
+            services: properties.services,
+        });
     }
 }
 
