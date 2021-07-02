@@ -312,6 +312,7 @@ pub struct JScanResult<'a: 'b, 'b> {
     internal: JObject<'a>,
     get_device: JMethodID<'a>,
     get_scan_record: JMethodID<'a>,
+    get_tx_power: JMethodID<'a>,
     env: &'b JNIEnv<'a>,
 }
 
@@ -326,10 +327,12 @@ impl<'a: 'b, 'b> JScanResult<'a, 'b> {
             "getScanRecord",
             "()Landroid/bluetooth/le/ScanRecord;",
         )?;
+        let get_tx_power = env.get_method_id(&class, "getTxPower", "()I")?;
         Ok(Self {
             internal: obj,
             get_device,
             get_scan_record,
+            get_tx_power,
             env,
         })
     }
@@ -358,6 +361,17 @@ impl<'a: 'b, 'b> JScanResult<'a, 'b> {
             )?
             .l()?;
         JScanRecord::from_env(self.env, obj)
+    }
+
+    pub fn get_tx_power(&self) -> Result<jint> {
+        self.env
+            .call_method_unchecked(
+                self.internal,
+                self.get_tx_power,
+                JavaType::Primitive(Primitive::Int),
+                &[],
+            )?
+            .i()
     }
 }
 
@@ -395,8 +409,9 @@ impl<'a: 'b, 'b> TryFrom<JScanResult<'a, 'b>> for PeripheralProperties {
             )
         };
 
-        let tx_power_level = record.get_tx_power_level()?;
-        let tx_power_level = if tx_power_level == i32::MIN {
+        let tx_power_level = result.get_tx_power()?;
+        const TX_POWER_NOT_PRESENT: jint = 127; // from ScanResult documentation
+        let tx_power_level = if tx_power_level == TX_POWER_NOT_PRESENT {
             None
         } else {
             Some(tx_power_level as i8)
