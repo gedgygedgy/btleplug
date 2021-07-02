@@ -9,19 +9,32 @@ use crate::{
 };
 use async_trait::async_trait;
 use futures::stream::Stream;
-use jni::objects::JObject;
+use jni::objects::{GlobalRef, JObject};
 use std::pin::Pin;
 
 #[derive(Clone)]
 pub struct Adapter {
     manager: AdapterManager<Peripheral>,
+    internal: GlobalRef,
 }
 
 impl Adapter {
-    pub(crate) fn new() -> Self {
-        Adapter {
+    pub(crate) fn new() -> Result<Self> {
+        let env = global_jvm().get_env()?;
+
+        let obj = env.new_object(
+            "com/nonpolynomial/btleplug/android/impl/Adapter",
+            "()V",
+            &[],
+        )?;
+        let internal = env.new_global_ref(obj)?;
+        let adapter = Self {
             manager: AdapterManager::default(),
-        }
+            internal,
+        };
+        env.set_rust_field(obj, "handle", adapter.clone())?;
+
+        Ok(adapter)
     }
 
     pub fn report_scan_result(&self, scan_result: JObject) -> Result<Peripheral> {
@@ -30,15 +43,30 @@ impl Adapter {
         let env = global_jvm().get_env()?;
         let scan_result = JScanResult::from_env(&env, scan_result)?;
 
-        let properties: PeripheralProperties = scan_result.try_into()?;
+        let (addr, properties): (BDAddr, Option<PeripheralProperties>) = scan_result.try_into()?;
 
-        let peripheral = match self.manager.peripheral(properties.address) {
-            Some(p) => p,
-            None => self.add(properties.address)?,
-        };
-        peripheral.report_properties(properties);
-
-        Ok(peripheral)
+        match self.manager.peripheral(addr) {
+            Some(p) => match properties {
+                Some(properties) => {
+                    p.report_properties(properties);
+                    self.manager.emit(CentralEvent::DeviceUpdated(addr));
+                    Ok(p)
+                }
+                None => {
+                    self.manager.emit(CentralEvent::DeviceLost(addr));
+                    Err(Error::DeviceNotFound)
+                }
+            },
+            None => match properties {
+                Some(properties) => {
+                    let p = self.add(addr)?;
+                    p.report_properties(properties);
+                    self.manager.emit(CentralEvent::DeviceDiscovered(addr));
+                    Ok(p)
+                }
+                None => Err(Error::DeviceNotFound),
+            },
+        }
     }
 
     fn add(&self, address: BDAddr) -> Result<Peripheral> {
@@ -58,11 +86,15 @@ impl Central for Adapter {
     }
 
     async fn start_scan(&self) -> Result<()> {
-        Err(Error::NotSupported("TODO".to_string()))
+        let env = global_jvm().get_env()?;
+        env.call_method(&self.internal, "startScan", "()V", &[])?;
+        Ok(())
     }
 
     async fn stop_scan(&self) -> Result<()> {
-        Err(Error::NotSupported("TODO".to_string()))
+        let env = global_jvm().get_env()?;
+        env.call_method(&self.internal, "stopScan", "()V", &[])?;
+        Ok(())
     }
 
     async fn peripherals(&self) -> Result<Vec<Peripheral>> {

@@ -375,7 +375,7 @@ impl<'a: 'b, 'b> JScanResult<'a, 'b> {
     }
 }
 
-impl<'a: 'b, 'b> TryFrom<JScanResult<'a, 'b>> for PeripheralProperties {
+impl<'a: 'b, 'b> TryFrom<JScanResult<'a, 'b>> for (BDAddr, Option<PeripheralProperties>) {
     type Error = crate::Error;
 
     fn try_from(result: JScanResult<'a, 'b>) -> std::result::Result<Self, Self::Error> {
@@ -392,71 +392,98 @@ impl<'a: 'b, 'b> TryFrom<JScanResult<'a, 'b>> for PeripheralProperties {
         )?;
 
         let record = result.get_scan_record()?;
-
-        let device_name_obj = record.get_device_name()?;
-        let device_name = if result
+        let record_obj: &JObject = &record;
+        let properties = if result
             .env
-            .is_same_object(device_name_obj, JObject::null())?
+            .is_same_object(record_obj.clone(), JObject::null())?
         {
             None
         } else {
-            let device_name_str = JavaStr::from_env(result.env, device_name_obj)?;
-            Some(
-                device_name_str
-                    .to_str()
-                    .map_err(|e| Self::Error::Other(e.into()))?
-                    .to_string(),
-            )
+            let device_name_obj = record.get_device_name()?;
+            let device_name = if result
+                .env
+                .is_same_object(device_name_obj, JObject::null())?
+            {
+                None
+            } else {
+                let device_name_str = JavaStr::from_env(result.env, device_name_obj)?;
+                Some(
+                    device_name_str
+                        .to_str()
+                        .map_err(|e| Self::Error::Other(e.into()))?
+                        .to_string(),
+                )
+            };
+
+            let tx_power_level = result.get_tx_power()?;
+            const TX_POWER_NOT_PRESENT: jint = 127; // from ScanResult documentation
+            let tx_power_level = if tx_power_level == TX_POWER_NOT_PRESENT {
+                None
+            } else {
+                Some(tx_power_level as i8)
+            };
+
+            let manufacturer_specific_data_array = record.get_manufacturer_specific_data()?;
+            let manufacturer_specific_data_obj: &JObject = &manufacturer_specific_data_array;
+            let mut manufacturer_data = HashMap::new();
+            if !result
+                .env
+                .is_same_object(manufacturer_specific_data_obj.clone(), JObject::null())?
+            {
+                for item in manufacturer_specific_data_array.iter() {
+                    let (index, data) = item?;
+
+                    let index = index as u16;
+                    let data = jni_utils::arrays::byte_array_to_vec(result.env, data.into_inner())?;
+                    manufacturer_data.insert(index, data);
+                }
+            }
+
+            let service_data_map = record.get_service_data()?;
+            let service_data_obj: &JObject = &service_data_map;
+            let mut service_data = HashMap::new();
+            if !result
+                .env
+                .is_same_object(service_data_obj.clone(), JObject::null())?
+            {
+                for (key, value) in service_data_map.iter()? {
+                    let uuid = JParcelUuid::from_env(result.env, key)?
+                        .get_uuid()?
+                        .as_uuid()?;
+                    let data =
+                        jni_utils::arrays::byte_array_to_vec(result.env, value.into_inner())?;
+                    service_data.insert(uuid, data);
+                }
+            }
+
+            let services_list = record.get_service_uuids()?;
+            let services_obj: &JObject = &services_list;
+            let mut services = Vec::new();
+            if !result
+                .env
+                .is_same_object(services_obj.clone(), JObject::null())?
+            {
+                for obj in services_list.iter()? {
+                    let uuid = JParcelUuid::from_env(result.env, obj)?
+                        .get_uuid()?
+                        .as_uuid()?;
+                    services.push(uuid);
+                }
+            }
+
+            Some(PeripheralProperties {
+                address: addr,
+                address_type: None,
+                local_name: device_name,
+                tx_power_level,
+                manufacturer_data,
+                service_data,
+                services,
+                discovery_count: 1,
+                has_scan_response: true,
+            })
         };
-
-        let tx_power_level = result.get_tx_power()?;
-        const TX_POWER_NOT_PRESENT: jint = 127; // from ScanResult documentation
-        let tx_power_level = if tx_power_level == TX_POWER_NOT_PRESENT {
-            None
-        } else {
-            Some(tx_power_level as i8)
-        };
-
-        let manufacturer_specific_data_array = record.get_manufacturer_specific_data()?;
-        let mut manufacturer_data = HashMap::new();
-        for item in manufacturer_specific_data_array.iter() {
-            let (index, data) = item?;
-
-            let index = index as u16;
-            let data = jni_utils::arrays::byte_array_to_vec(result.env, data.into_inner())?;
-            manufacturer_data.insert(index, data);
-        }
-
-        let service_data_map = record.get_service_data()?;
-        let mut service_data = HashMap::new();
-        for (key, value) in service_data_map.iter()? {
-            let uuid = JParcelUuid::from_env(result.env, key)?
-                .get_uuid()?
-                .as_uuid()?;
-            let data = jni_utils::arrays::byte_array_to_vec(result.env, value.into_inner())?;
-            service_data.insert(uuid, data);
-        }
-
-        let services_list = record.get_service_uuids()?;
-        let mut services = Vec::new();
-        for obj in services_list.iter()? {
-            let uuid = JParcelUuid::from_env(result.env, obj)?
-                .get_uuid()?
-                .as_uuid()?;
-            services.push(uuid);
-        }
-
-        Ok(Self {
-            address: addr,
-            address_type: None,
-            local_name: device_name,
-            tx_power_level,
-            manufacturer_data,
-            service_data,
-            services,
-            discovery_count: 1,
-            has_scan_response: true,
-        })
+        Ok((addr, properties))
     }
 }
 
@@ -468,6 +495,20 @@ pub struct JScanRecord<'a: 'b, 'b> {
     get_service_data: JMethodID<'a>,
     get_service_uuids: JMethodID<'a>,
     env: &'b JNIEnv<'a>,
+}
+
+impl<'a: 'b, 'b> From<JScanRecord<'a, 'b>> for JObject<'a> {
+    fn from(scan_record: JScanRecord<'a, 'b>) -> Self {
+        scan_record.internal
+    }
+}
+
+impl<'a: 'b, 'b> ::std::ops::Deref for JScanRecord<'a, 'b> {
+    type Target = JObject<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.internal
+    }
 }
 
 impl<'a: 'b, 'b> JScanRecord<'a, 'b> {
@@ -566,6 +607,20 @@ pub struct JSparseArray<'a: 'b, 'b> {
     key_at: JMethodID<'a>,
     value_at: JMethodID<'a>,
     env: &'b JNIEnv<'a>,
+}
+
+impl<'a: 'b, 'b> From<JSparseArray<'a, 'b>> for JObject<'a> {
+    fn from(sparse_array: JSparseArray<'a, 'b>) -> Self {
+        sparse_array.internal
+    }
+}
+
+impl<'a: 'b, 'b> ::std::ops::Deref for JSparseArray<'a, 'b> {
+    type Target = JObject<'a>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.internal
+    }
 }
 
 impl<'a: 'b, 'b> JSparseArray<'a, 'b> {

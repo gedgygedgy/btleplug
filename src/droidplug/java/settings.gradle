@@ -3,6 +3,6 @@ pluginManagement {
         google()
     }
     plugins {
-        id 'com.android.library' version '4.2.1'
+        id 'com.android.library' version '4.2.2'
     }
 }
