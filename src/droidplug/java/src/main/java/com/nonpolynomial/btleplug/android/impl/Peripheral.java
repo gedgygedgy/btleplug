@@ -25,6 +25,7 @@ class Peripheral {
     private static final UUID CLIENT_CHARACTERISTIC_CONFIGURATION_DESCRIPTOR = new UUID(0x00002902_0000_1000L, 0x8000_00805f9b34fbL);
 
     private final BluetoothDevice device;
+    private final Adapter adapter;
     private BluetoothGatt gatt;
     private final Callback callback;
     private boolean connected = false;
@@ -34,8 +35,9 @@ class Peripheral {
     private boolean executingCommand = false;
     private CommandCallback commandCallback;
 
-    public Peripheral(String address) {
+    public Peripheral(Adapter adapter, String address) {
         this.device = BluetoothAdapter.getDefaultAdapter().getRemoteDevice(address);
+        this.adapter = adapter;
         this.callback = new Callback();
     }
 
@@ -330,6 +332,14 @@ class Peripheral {
                 if (Peripheral.this.commandCallback != null) {
                     Peripheral.this.commandCallback.onConnectionStateChange(gatt, status, newState);
                 }
+            }
+            switch (newState) {
+                case BluetoothGatt.STATE_CONNECTED:
+                    Peripheral.this.adapter.onConnectionStateChanged(Peripheral.this.device.getAddress(), true);
+                    break;
+                case BluetoothGatt.STATE_DISCONNECTED:
+                    Peripheral.this.adapter.onConnectionStateChanged(Peripheral.this.device.getAddress(), false);
+                    break;
             }
         }
 

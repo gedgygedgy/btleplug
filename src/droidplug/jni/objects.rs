@@ -91,10 +91,14 @@ impl<'a: 'b, 'b> JPeripheral<'a, 'b> {
         })
     }
 
-    pub fn new(env: &'b JNIEnv<'a>, addr: BDAddr) -> Result<Self> {
+    pub fn new(env: &'b JNIEnv<'a>, adapter: JObject<'a>, addr: BDAddr) -> Result<Self> {
         let class = env.find_class("com/nonpolynomial/btleplug/android/impl/Peripheral")?;
         let addr_jstr = env.new_string(format!("{:X}", addr))?;
-        let obj = env.new_object(class, "(Ljava/lang/String;)V", &[addr_jstr.into()])?;
+        let obj = env.new_object(
+            class,
+            "(Lcom/nonpolynomial/btleplug/android/impl/Adapter;Ljava/lang/String;)V",
+            &[adapter.into(), addr_jstr.into()],
+        )?;
         Self::from_env_impl(env, obj, class)
     }
 

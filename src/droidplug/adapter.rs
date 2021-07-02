@@ -9,8 +9,13 @@ use crate::{
 };
 use async_trait::async_trait;
 use futures::stream::Stream;
-use jni::objects::{GlobalRef, JObject};
-use std::pin::Pin;
+use jni::{
+    objects::{GlobalRef, JObject, JString},
+    strings::JavaStr,
+    sys::jboolean,
+    JNIEnv,
+};
+use std::{pin::Pin, str::FromStr};
 
 #[derive(Clone)]
 pub struct Adapter {
@@ -69,7 +74,7 @@ impl Adapter {
 
     fn add(&self, address: BDAddr) -> Result<Peripheral> {
         let env = global_jvm().get_env()?;
-        let peripheral = Peripheral::new(&env, address)?;
+        let peripheral = Peripheral::new(&env, self.internal.as_obj(), address)?;
         self.manager.add_peripheral(address, peripheral.clone());
         Ok(peripheral)
     }
@@ -135,4 +140,32 @@ impl Central for Adapter {
     async fn add_peripheral(&self, address: BDAddr) -> Result<Peripheral> {
         self.add(address)
     }
+}
+
+pub(crate) fn adapter_report_scan_result_internal(
+    env: &JNIEnv,
+    obj: JObject,
+    scan_result: JObject,
+) -> crate::Result<()> {
+    let adapter = env.get_rust_field::<_, _, Adapter>(obj, "handle")?;
+    adapter.report_scan_result(scan_result)?;
+    Ok(())
+}
+
+pub(crate) fn adapter_on_connection_state_changed_internal(
+    env: &JNIEnv,
+    obj: JObject,
+    addr: JString,
+    connected: jboolean,
+) -> crate::Result<()> {
+    let adapter = env.get_rust_field::<_, _, Adapter>(obj, "handle")?;
+    let addr_str = JavaStr::from_env(env, addr)?;
+    let addr_str = addr_str.to_str().map_err(|e| Error::Other(e.into()))?;
+    let addr = BDAddr::from_str(addr_str)?;
+    adapter.manager.emit(if connected != 0 {
+        CentralEvent::DeviceConnected(addr)
+    } else {
+        CentralEvent::DeviceDisconnected(addr)
+    });
+    Ok(())
 }

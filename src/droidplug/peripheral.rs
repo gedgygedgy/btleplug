@@ -5,7 +5,7 @@ use crate::{
 use async_trait::async_trait;
 use futures::stream::Stream;
 use jni::{
-    objects::{GlobalRef, JList, JThrowable},
+    objects::{GlobalRef, JList, JObject, JThrowable},
     JNIEnv,
 };
 use jni_utils::{future::JavaFuture, stream::JavaStream, uuid::JUuid};
@@ -35,8 +35,8 @@ pub struct Peripheral {
 }
 
 impl Peripheral {
-    pub(crate) fn new(env: &JNIEnv, addr: BDAddr) -> Result<Self> {
-        let obj = JPeripheral::new(env, addr)?;
+    pub(crate) fn new(env: &JNIEnv, adapter: JObject, addr: BDAddr) -> Result<Self> {
+        let obj = JPeripheral::new(env, adapter, addr)?;
         Ok(Self {
             addr,
             internal: env.new_global_ref(obj)?,

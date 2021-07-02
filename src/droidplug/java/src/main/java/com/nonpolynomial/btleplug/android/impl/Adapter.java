@@ -25,6 +25,8 @@ class Adapter {
 
     private native void reportScanResult(ScanResult result);
 
+    public native void onConnectionStateChanged(String address, boolean connected);
+
     private class Callback extends ScanCallback {
         @Override
         public void onScanResult(int callbackType, ScanResult result) {
