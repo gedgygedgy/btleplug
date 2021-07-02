@@ -1,6 +1,5 @@
 pub mod objects;
 
-use super::adapter::Adapter;
 use ::jni::{objects::JObject, JNIEnv, JavaVM, NativeMethod};
 use jni::{objects::JString, sys::jboolean};
 use once_cell::sync::OnceCell;
