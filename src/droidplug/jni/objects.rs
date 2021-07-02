@@ -286,8 +286,7 @@ impl<'a: 'b, 'b> JBluetoothDevice<'a, 'b> {
     pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
         let class = env.auto_local(env.find_class("android/bluetooth/BluetoothDevice")?);
 
-        let get_address =
-            env.get_method_id(class.as_obj(), "getAddress", "()Ljava/lang/String;")?;
+        let get_address = env.get_method_id(&class, "getAddress", "()Ljava/lang/String;")?;
         Ok(Self {
             internal: obj,
             get_address,
@@ -320,13 +319,10 @@ impl<'a: 'b, 'b> JScanResult<'a, 'b> {
     pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
         let class = env.auto_local(env.find_class("android/bluetooth/le/ScanResult")?);
 
-        let get_device = env.get_method_id(
-            class.as_obj(),
-            "getDevice",
-            "()Landroid/bluetooth/BluetoothDevice;",
-        )?;
+        let get_device =
+            env.get_method_id(&class, "getDevice", "()Landroid/bluetooth/BluetoothDevice;")?;
         let get_scan_record = env.get_method_id(
-            class.as_obj(),
+            &class,
             "getScanRecord",
             "()Landroid/bluetooth/le/ScanRecord;",
         )?;
@@ -463,18 +459,16 @@ impl<'a: 'b, 'b> JScanRecord<'a, 'b> {
     pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
         let class = env.auto_local(env.find_class("android/bluetooth/le/ScanRecord")?);
 
-        let get_device_name =
-            env.get_method_id(class.as_obj(), "getDeviceName", "()Ljava/lang/String;")?;
-        let get_tx_power_level = env.get_method_id(class.as_obj(), "getTxPowerLevel", "()I")?;
+        let get_device_name = env.get_method_id(&class, "getDeviceName", "()Ljava/lang/String;")?;
+        let get_tx_power_level = env.get_method_id(&class, "getTxPowerLevel", "()I")?;
         let get_manufacturer_specific_data = env.get_method_id(
-            class.as_obj(),
+            &class,
             "getManufacturerSpecificData",
             "()Landroid/util/SparseArray;",
         )?;
-        let get_service_data =
-            env.get_method_id(class.as_obj(), "getServiceData", "()Ljava/util/Map;")?;
+        let get_service_data = env.get_method_id(&class, "getServiceData", "()Ljava/util/Map;")?;
         let get_service_uuids =
-            env.get_method_id(class.as_obj(), "getServiceUuids", "()Ljava/util/List;")?;
+            env.get_method_id(&class, "getServiceUuids", "()Ljava/util/List;")?;
         Ok(Self {
             internal: obj,
             get_device_name,
@@ -563,9 +557,9 @@ impl<'a: 'b, 'b> JSparseArray<'a, 'b> {
     pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
         let class = env.auto_local(env.find_class("android/util/SparseArray")?);
 
-        let size = env.get_method_id(class.as_obj(), "size", "()I")?;
-        let key_at = env.get_method_id(class.as_obj(), "keyAt", "(I)I")?;
-        let value_at = env.get_method_id(class.as_obj(), "valueAt", "(I)Ljava/lang/Object;")?;
+        let size = env.get_method_id(&class, "size", "()I")?;
+        let key_at = env.get_method_id(&class, "keyAt", "(I)I")?;
+        let value_at = env.get_method_id(&class, "valueAt", "(I)Ljava/lang/Object;")?;
         Ok(Self {
             internal: obj,
             size,
@@ -652,7 +646,7 @@ impl<'a: 'b, 'b> JParcelUuid<'a, 'b> {
     pub fn from_env(env: &'b JNIEnv<'a>, obj: JObject<'a>) -> Result<Self> {
         let class = env.auto_local(env.find_class("android/os/ParcelUuid")?);
 
-        let get_uuid = env.get_method_id(class.as_obj(), "getUuid", "()Ljava/util/UUID;")?;
+        let get_uuid = env.get_method_id(&class, "getUuid", "()Ljava/util/UUID;")?;
         Ok(Self {
             internal: obj,
             get_uuid,
