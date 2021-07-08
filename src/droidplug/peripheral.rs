@@ -5,10 +5,13 @@ use crate::{
 use async_trait::async_trait;
 use futures::stream::Stream;
 use jni::{
-    objects::{GlobalRef, JList, JObject, JThrowable},
+    objects::{GlobalRef, JList, JObject},
     JNIEnv,
 };
-use jni_utils::{future::JavaFuture, stream::JavaStream, uuid::JUuid};
+use jni_utils::{
+    arrays::byte_array_to_vec, exceptions::try_block, future::JavaFuture, stream::JavaStream,
+    task::JPollResult, uuid::JUuid,
+};
 use std::{
     collections::BTreeSet,
     convert::TryFrom,
@@ -80,28 +83,23 @@ impl Peripheral {
             let uuid_obj = JUuid::new(env, characteristic.uuid)?;
             JavaFuture::try_from(obj.set_characteristic_notification(uuid_obj, enable)?)
         })?;
-        match future.await? {
-            Ok(_) => Ok(()),
-            Err(ex) => self.with_obj(|env, _obj| {
-                let ex: JThrowable = ex.as_obj().into();
-                Err(
-                    if env.is_instance_of(
-                        ex,
-                        "com/nonpolynomial/btleplug/android/impl/NotConnectedException",
-                    )? {
-                        Error::NotConnected
-                    } else if env.is_instance_of(
-                        ex,
-                        "com/nonpolynomial/btleplug/android/impl/PermissionDeniedException",
-                    )? {
-                        Error::PermissionDenied
-                    } else {
-                        env.throw(ex)?; // Something else, so pass it back to Java.
-                        Error::Other(Box::new(::jni::errors::Error::JavaException))
-                    },
-                )
-            }),
-        }
+        let result_ref = future.await?;
+        self.with_obj(|env, _obj| {
+            let result = JPollResult::from_env(env, result_ref.as_obj())?;
+            try_block(env, || {
+                result.get()?;
+                Ok(Ok(()))
+            })
+            .catch(
+                "com/nonpolynomial/btleplug/android/impl/NotConnectedException",
+                |_| Ok(Err(Error::NotConnected)),
+            )
+            .catch(
+                "com/nonpolynomial/btleplug/android/impl/PermissionDeniedException",
+                |_| Ok(Err(Error::PermissionDenied)),
+            )
+            .result()
+        })?
     }
 }
 
@@ -133,72 +131,69 @@ impl api::Peripheral for Peripheral {
 
     async fn connect(&self) -> Result<()> {
         let future = self.with_obj(|_env, obj| JavaFuture::try_from(obj.connect()?))?;
-        match future.await? {
-            Ok(_) => Ok(()),
-            Err(ex) => self.with_obj(|env, _obj| {
-                let ex: JThrowable = ex.as_obj().into();
-                Err(
-                    if env.is_instance_of(
-                        ex,
-                        "com/nonpolynomial/btleplug/android/impl/NotConnectedException",
-                    )? {
-                        Error::NotConnected
-                    } else if env.is_instance_of(
-                        ex,
-                        "com/nonpolynomial/btleplug/android/impl/PermissionDeniedException",
-                    )? {
-                        Error::PermissionDenied
-                    } else {
-                        env.throw(ex)?; // Something else, so pass it back to Java.
-                        Error::Other(Box::new(::jni::errors::Error::JavaException))
-                    },
-                )
-            }),
-        }
+        let result_ref = future.await?;
+        self.with_obj(|env, _obj| {
+            let result = JPollResult::from_env(env, result_ref.as_obj())?;
+            try_block(env, || {
+                result.get()?;
+                Ok(Ok(()))
+            })
+            .catch(
+                "com/nonpolynomial/btleplug/android/impl/NotConnectedException",
+                |_| Ok(Err(Error::NotConnected)),
+            )
+            .catch(
+                "com/nonpolynomial/btleplug/android/impl/PermissionDeniedException",
+                |_| Ok(Err(Error::PermissionDenied)),
+            )
+            .result()
+        })?
     }
 
     async fn disconnect(&self) -> Result<()> {
         let future = self.with_obj(|_env, obj| JavaFuture::try_from(obj.disconnect()?))?;
-        match future.await? {
-            Ok(_) => Ok(()),
-            Err(ex) => self.with_obj(|env, _obj| {
-                let ex: JThrowable = ex.as_obj().into();
-                env.throw(ex)?;
-                Err(Error::Other(Box::new(::jni::errors::Error::JavaException)))
-            }),
-        }
+        let result_ref = future.await?;
+        self.with_obj(|env, _obj| {
+            let result = JPollResult::from_env(env, result_ref.as_obj())?;
+            result.get()?;
+            Ok(())
+        })
     }
 
     async fn discover_characteristics(&self) -> Result<Vec<Characteristic>> {
         let future =
             self.with_obj(|_env, obj| JavaFuture::try_from(obj.discover_characteristics()?))?;
-        match future.await? {
-            Ok(obj) => self.with_obj(|env, _obj| {
-                use std::iter::FromIterator;
+        let result_ref = future.await?;
+        self.with_obj(|env, _obj| {
+            use std::iter::FromIterator;
 
-                let list = JList::from_env(env, obj.as_obj())?;
-                let mut result = Vec::new();
+            let result = JPollResult::from_env(env, result_ref.as_obj())?;
+            let obj = try_block(env, || Ok(Ok(result.get()?)))
+                .catch(
+                    "com/nonpolynomial/btleplug/android/impl/NotConnectedException",
+                    |_| Ok(Err(Error::NotConnected)),
+                )
+                .catch(
+                    "com/nonpolynomial/btleplug/android/impl/PermissionDeniedException",
+                    |_| Ok(Err(Error::PermissionDenied)),
+                )
+                .result()??;
+            let list = JList::from_env(env, obj)?;
+            let mut result = Vec::new();
 
-                for characteristic in list.iter()? {
-                    let characteristic =
-                        JBluetoothGattCharacteristic::from_env(env, characteristic)?;
-                    result.push(Characteristic {
-                        uuid: characteristic.get_uuid()?,
-                        properties: characteristic.get_properties()?,
-                    });
-                }
+            for characteristic in list.iter()? {
+                let characteristic = JBluetoothGattCharacteristic::from_env(env, characteristic)?;
+                result.push(Characteristic {
+                    uuid: characteristic.get_uuid()?,
+                    properties: characteristic.get_properties()?,
+                });
+            }
 
-                let mut guard = self.shared.lock().unwrap();
-                guard.characteristics = BTreeSet::from_iter(result.clone());
+            let mut guard = self.shared.lock().unwrap();
+            guard.characteristics = BTreeSet::from_iter(result.clone());
 
-                Ok(result)
-            }),
-            Err(ex) => self.with_obj(|env, _obj| {
-                let ex: JThrowable = ex.as_obj().into();
-                env.throw(ex)?;
-                Err(Error::Other(Box::new(::jni::errors::Error::JavaException)))
-            }),
-        }
+            Ok(result)
+        })
     }
 
     async fn write(
@@ -216,14 +211,23 @@ impl api::Peripheral for Peripheral {
             };
             JavaFuture::try_from(obj.write(uuid, data_obj.into(), write_type)?)
         })?;
-        match future.await? {
-            Ok(_) => Ok(()),
-            Err(ex) => self.with_obj(|env, _obj| {
-                let ex: JThrowable = ex.as_obj().into();
-                env.throw(ex)?;
-                Err(Error::Other(Box::new(::jni::errors::Error::JavaException)))
-            }),
-        }
+        let result_ref = future.await?;
+        self.with_obj(|env, _obj| {
+            let result = JPollResult::from_env(env, result_ref.as_obj())?;
+            try_block(env, || {
+                result.get()?;
+                Ok(Ok(()))
+            })
+            .catch(
+                "com/nonpolynomial/btleplug/android/impl/NotConnectedException",
+                |_| Ok(Err(Error::NotConnected)),
+            )
+            .catch(
+                "com/nonpolynomial/btleplug/android/impl/PermissionDeniedException",
+                |_| Ok(Err(Error::PermissionDenied)),
+            )
+            .result()?
+        })
     }
 
     async fn read(&self, characteristic: &Characteristic) -> Result<Vec<u8>> {
@@ -231,19 +235,21 @@ impl api::Peripheral for Peripheral {
             let uuid = JUuid::new(env, characteristic.uuid)?;
             JavaFuture::try_from(obj.read(uuid)?)
         })?;
-        match future.await? {
-            Ok(result) => self.with_obj(|env, _obj| {
-                Ok(jni_utils::arrays::byte_array_to_vec(
-                    env,
-                    result.as_obj().into_inner(),
-                )?)
-            }),
-            Err(ex) => self.with_obj(|env, _obj| {
-                let ex: JThrowable = ex.as_obj().into();
-                env.throw(ex)?;
-                Err(Error::Other(Box::new(::jni::errors::Error::JavaException)))
-            }),
-        }
+        let result_ref = future.await?;
+        self.with_obj(|env, _obj| {
+            let result = JPollResult::from_env(env, result_ref.as_obj())?;
+            let bytes = try_block(env, || Ok(Ok(result.get()?)))
+                .catch(
+                    "com/nonpolynomial/btleplug/android/impl/NotConnectedException",
+                    |_| Ok(Err(Error::NotConnected)),
+                )
+                .catch(
+                    "com/nonpolynomial/btleplug/android/impl/PermissionDeniedException",
+                    |_| Ok(Err(Error::PermissionDenied)),
+                )
+                .result()??;
+            Ok(byte_array_to_vec(env, bytes.into_inner())?)
+        })
     }
 
     async fn subscribe(&self, characteristic: &Characteristic) -> Result<()> {
