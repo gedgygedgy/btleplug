@@ -25,6 +25,33 @@ use super::jni::{
     objects::{JBluetoothGattCharacteristic, JPeripheral},
 };
 
+fn get_poll_result<'a: 'b, 'b>(
+    env: &'b JNIEnv<'a>,
+    result: JPollResult<'a, 'b>,
+) -> Result<JObject<'a>> {
+    try_block(env, || Ok(Ok(result.get()?)))
+        .catch("gedgygedgy/rust/future/FutureException", |ex| {
+            let cause = env
+                .call_method(ex, "getCause", "()Ljava/lang/Throwable;", &[])?
+                .l()?;
+            if env.is_instance_of(
+                cause,
+                "com/nonpolynomial/btleplug/android/impl/NotConnectedException",
+            )? {
+                Ok(Err(Error::NotConnected))
+            } else if env.is_instance_of(
+                cause,
+                "com/nonpolynomial/btleplug/android/impl/PermissionDeniedException",
+            )? {
+                Ok(Err(Error::PermissionDenied))
+            } else {
+                env.throw(ex)?;
+                Err(jni::errors::Error::JavaException)
+            }
+        })
+        .result()?
+}
+
 struct PeripheralShared {
     characteristics: BTreeSet<Characteristic>,
     properties: Option<PeripheralProperties>,
@@ -86,20 +113,8 @@ impl Peripheral {
         let result_ref = future.await?;
         self.with_obj(|env, _obj| {
             let result = JPollResult::from_env(env, result_ref.as_obj())?;
-            try_block(env, || {
-                result.get()?;
-                Ok(Ok(()))
-            })
-            .catch(
-                "com/nonpolynomial/btleplug/android/impl/NotConnectedException",
-                |_| Ok(Err(Error::NotConnected)),
-            )
-            .catch(
-                "com/nonpolynomial/btleplug/android/impl/PermissionDeniedException",
-                |_| Ok(Err(Error::PermissionDenied)),
-            )
-            .result()
-        })?
+            get_poll_result(env, result).map(|_| {})
+        })
     }
 }
 
@@ -134,20 +149,8 @@ impl api::Peripheral for Peripheral {
         let result_ref = future.await?;
         self.with_obj(|env, _obj| {
             let result = JPollResult::from_env(env, result_ref.as_obj())?;
-            try_block(env, || {
-                result.get()?;
-                Ok(Ok(()))
-            })
-            .catch(
-                "com/nonpolynomial/btleplug/android/impl/NotConnectedException",
-                |_| Ok(Err(Error::NotConnected)),
-            )
-            .catch(
-                "com/nonpolynomial/btleplug/android/impl/PermissionDeniedException",
-                |_| Ok(Err(Error::PermissionDenied)),
-            )
-            .result()
-        })?
+            get_poll_result(env, result).map(|_| {})
+        })
     }
 
     async fn disconnect(&self) -> Result<()> {
@@ -155,8 +158,7 @@ impl api::Peripheral for Peripheral {
         let result_ref = future.await?;
         self.with_obj(|env, _obj| {
             let result = JPollResult::from_env(env, result_ref.as_obj())?;
-            result.get()?;
-            Ok(())
+            get_poll_result(env, result).map(|_| {})
         })
     }
 
@@ -168,16 +170,7 @@ impl api::Peripheral for Peripheral {
             use std::iter::FromIterator;
 
             let result = JPollResult::from_env(env, result_ref.as_obj())?;
-            let obj = try_block(env, || Ok(Ok(result.get()?)))
-                .catch(
-                    "com/nonpolynomial/btleplug/android/impl/NotConnectedException",
-                    |_| Ok(Err(Error::NotConnected)),
-                )
-                .catch(
-                    "com/nonpolynomial/btleplug/android/impl/PermissionDeniedException",
-                    |_| Ok(Err(Error::PermissionDenied)),
-                )
-                .result()??;
+            let obj = get_poll_result(env, result)?;
             let list = JList::from_env(env, obj)?;
             let mut result = Vec::new();
 
@@ -214,19 +207,7 @@ impl api::Peripheral for Peripheral {
         let result_ref = future.await?;
         self.with_obj(|env, _obj| {
             let result = JPollResult::from_env(env, result_ref.as_obj())?;
-            try_block(env, || {
-                result.get()?;
-                Ok(Ok(()))
-            })
-            .catch(
-                "com/nonpolynomial/btleplug/android/impl/NotConnectedException",
-                |_| Ok(Err(Error::NotConnected)),
-            )
-            .catch(
-                "com/nonpolynomial/btleplug/android/impl/PermissionDeniedException",
-                |_| Ok(Err(Error::PermissionDenied)),
-            )
-            .result()?
+            get_poll_result(env, result).map(|_| {})
         })
     }
 
@@ -238,16 +219,7 @@ impl api::Peripheral for Peripheral {
         let result_ref = future.await?;
         self.with_obj(|env, _obj| {
             let result = JPollResult::from_env(env, result_ref.as_obj())?;
-            let bytes = try_block(env, || Ok(Ok(result.get()?)))
-                .catch(
-                    "com/nonpolynomial/btleplug/android/impl/NotConnectedException",
-                    |_| Ok(Err(Error::NotConnected)),
-                )
-                .catch(
-                    "com/nonpolynomial/btleplug/android/impl/PermissionDeniedException",
-                    |_| Ok(Err(Error::PermissionDenied)),
-                )
-                .result()??;
+            let bytes = get_poll_result(env, result)?;
             Ok(byte_array_to_vec(env, bytes.into_inner())?)
         })
     }
