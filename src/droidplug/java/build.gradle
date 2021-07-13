@@ -32,14 +32,6 @@ android {
     }
 }
 
-def properties = new Properties()
-properties.load(project.rootProject.file("local.properties").newDataInputStream())
-def jniUtilsLocation = properties.getProperty 'jni-utils.location'
-
 dependencies {
-    if (jniUtilsLocation == null) {
-        implementation 'gedgygedgy.rust:jni-utils:0.1.0'
-    } else {
-        implementation files(jniUtilsLocation)
-    }
+    implementation 'gedgygedgy.rust:jni-utils:0.1.0'
 }
