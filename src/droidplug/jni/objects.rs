@@ -48,34 +48,41 @@ impl<'a: 'b, 'b> JPeripheral<'a, 'b> {
     fn from_env_impl(env: &'b JNIEnv<'a>, obj: JObject<'a>, class: JClass<'a>) -> Result<Self> {
         let class = env.auto_local(class);
 
-        let connect = env.get_method_id(&class, "connect", "()Lgedgygedgy/rust/future/Future;")?;
-        let disconnect =
-            env.get_method_id(&class, "disconnect", "()Lgedgygedgy/rust/future/Future;")?;
+        let connect = env.get_method_id(
+            &class,
+            "connect",
+            "()Lio/github/gedgygedgy/rust/future/Future;",
+        )?;
+        let disconnect = env.get_method_id(
+            &class,
+            "disconnect",
+            "()Lio/github/gedgygedgy/rust/future/Future;",
+        )?;
         let is_connected = env.get_method_id(&class, "isConnected", "()Z")?;
         let discover_characteristics = env.get_method_id(
             &class,
             "discoverCharacteristics",
-            "()Lgedgygedgy/rust/future/Future;",
+            "()Lio/github/gedgygedgy/rust/future/Future;",
         )?;
         let read = env.get_method_id(
             &class,
             "read",
-            "(Ljava/util/UUID;)Lgedgygedgy/rust/future/Future;",
+            "(Ljava/util/UUID;)Lio/github/gedgygedgy/rust/future/Future;",
         )?;
         let write = env.get_method_id(
             &class,
             "write",
-            "(Ljava/util/UUID;[BI)Lgedgygedgy/rust/future/Future;",
+            "(Ljava/util/UUID;[BI)Lio/github/gedgygedgy/rust/future/Future;",
         )?;
         let set_characteristic_notification = env.get_method_id(
             &class,
             "setCharacteristicNotification",
-            "(Ljava/util/UUID;Z)Lgedgygedgy/rust/future/Future;",
+            "(Ljava/util/UUID;Z)Lio/github/gedgygedgy/rust/future/Future;",
         )?;
         let get_notifications = env.get_method_id(
             &class,
             "getNotifications",
-            "()Lgedgygedgy/rust/stream/Stream;",
+            "()Lio/github/gedgygedgy/rust/stream/Stream;",
         )?;
         Ok(Self {
             internal: obj,
@@ -108,7 +115,7 @@ impl<'a: 'b, 'b> JPeripheral<'a, 'b> {
             .call_method_unchecked(
                 self.internal,
                 self.connect,
-                JavaType::Object("Lgedgygedgy/rust/future/Future;".to_string()),
+                JavaType::Object("Lio/github/gedgygedgy/rust/future/Future;".to_string()),
                 &[],
             )?
             .l()?;
@@ -121,7 +128,7 @@ impl<'a: 'b, 'b> JPeripheral<'a, 'b> {
             .call_method_unchecked(
                 self.internal,
                 self.disconnect,
-                JavaType::Object("Lgedgygedgy/rust/future/Future;".to_string()),
+                JavaType::Object("Lio/github/gedgygedgy/rust/future/Future;".to_string()),
                 &[],
             )?
             .l()?;
@@ -145,7 +152,7 @@ impl<'a: 'b, 'b> JPeripheral<'a, 'b> {
             .call_method_unchecked(
                 self.internal,
                 self.discover_characteristics,
-                JavaType::Object("Lgedgygedgy/rust/future/Future;".to_string()),
+                JavaType::Object("Lio/github/gedgygedgy/rust/future/Future;".to_string()),
                 &[],
             )?
             .l()?;
@@ -158,7 +165,7 @@ impl<'a: 'b, 'b> JPeripheral<'a, 'b> {
             .call_method_unchecked(
                 self.internal,
                 self.read,
-                JavaType::Object("Lgedgygedgy/rust/future/Future;".to_string()),
+                JavaType::Object("Lio/github/gedgygedgy/rust/future/Future;".to_string()),
                 &[uuid.into()],
             )?
             .l()?;
@@ -176,7 +183,7 @@ impl<'a: 'b, 'b> JPeripheral<'a, 'b> {
             .call_method_unchecked(
                 self.internal,
                 self.write,
-                JavaType::Object("Lgedgygedgy/rust/future/Future;".to_string()),
+                JavaType::Object("Lio/github/gedgygedgy/rust/future/Future;".to_string()),
                 &[uuid.into(), data.into(), write_type.into()],
             )?
             .l()?;
@@ -193,7 +200,7 @@ impl<'a: 'b, 'b> JPeripheral<'a, 'b> {
             .call_method_unchecked(
                 self.internal,
                 self.set_characteristic_notification,
-                JavaType::Object("Lgedgygedgy/rust/future/Future;".to_string()),
+                JavaType::Object("Lio/github/gedgygedgy/rust/future/Future;".to_string()),
                 &[uuid.into(), enable.into()],
             )?
             .l()?;
@@ -206,7 +213,7 @@ impl<'a: 'b, 'b> JPeripheral<'a, 'b> {
             .call_method_unchecked(
                 self.internal,
                 self.get_notifications,
-                JavaType::Object("Lgedgygedgy/rust/stream/Stream;".to_string()),
+                JavaType::Object("Lio/github/gedgygedgy/rust/stream/Stream;".to_string()),
                 &[],
             )?
             .l()?;

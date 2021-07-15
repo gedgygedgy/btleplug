@@ -33,5 +33,5 @@ android {
 }
 
 dependencies {
-    implementation 'gedgygedgy.rust:jni-utils:0.1.0'
+    implementation 'io.github.gedgygedgy.rust:jni-utils:0.1.0'
 }

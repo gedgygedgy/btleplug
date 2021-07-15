@@ -15,10 +15,10 @@ import java.util.List;
 import java.util.Queue;
 import java.util.UUID;
 
-import gedgygedgy.rust.future.Future;
-import gedgygedgy.rust.stream.QueueStream;
-import gedgygedgy.rust.future.SimpleFuture;
-import gedgygedgy.rust.stream.Stream;
+import io.github.gedgygedgy.rust.future.Future;
+import io.github.gedgygedgy.rust.stream.QueueStream;
+import io.github.gedgygedgy.rust.future.SimpleFuture;
+import io.github.gedgygedgy.rust.stream.Stream;
 
 @SuppressWarnings("unused") // Native code uses this class.
 class Peripheral {

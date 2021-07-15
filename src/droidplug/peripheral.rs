@@ -9,7 +9,7 @@ use jni::{
     JNIEnv,
 };
 use jni_utils::{
-    arrays::byte_array_to_vec, exceptions::try_block, future::JavaFuture, stream::JavaStream,
+    arrays::byte_array_to_vec, exceptions::try_block, future::JSendFuture, stream::JavaStream,
     task::JPollResult, uuid::JUuid,
 };
 use std::{
@@ -30,7 +30,7 @@ fn get_poll_result<'a: 'b, 'b>(
     result: JPollResult<'a, 'b>,
 ) -> Result<JObject<'a>> {
     try_block(env, || Ok(Ok(result.get()?)))
-        .catch("gedgygedgy/rust/future/FutureException", |ex| {
+        .catch("io/github/gedgygedgy/rust/future/FutureException", |ex| {
             let cause = env
                 .call_method(ex, "getCause", "()Ljava/lang/Throwable;", &[])?
                 .l()?;
@@ -108,7 +108,7 @@ impl Peripheral {
     ) -> Result<()> {
         let future = self.with_obj(|env, obj| {
             let uuid_obj = JUuid::new(env, characteristic.uuid)?;
-            JavaFuture::try_from(obj.set_characteristic_notification(uuid_obj, enable)?)
+            JSendFuture::try_from(obj.set_characteristic_notification(uuid_obj, enable)?)
         })?;
         let result_ref = future.await?;
         self.with_obj(|env, _obj| {
@@ -145,7 +145,7 @@ impl api::Peripheral for Peripheral {
     }
 
     async fn connect(&self) -> Result<()> {
-        let future = self.with_obj(|_env, obj| JavaFuture::try_from(obj.connect()?))?;
+        let future = self.with_obj(|_env, obj| JSendFuture::try_from(obj.connect()?))?;
         let result_ref = future.await?;
         self.with_obj(|env, _obj| {
             let result = JPollResult::from_env(env, result_ref.as_obj())?;
@@ -154,7 +154,7 @@ impl api::Peripheral for Peripheral {
     }
 
     async fn disconnect(&self) -> Result<()> {
-        let future = self.with_obj(|_env, obj| JavaFuture::try_from(obj.disconnect()?))?;
+        let future = self.with_obj(|_env, obj| JSendFuture::try_from(obj.disconnect()?))?;
         let result_ref = future.await?;
         self.with_obj(|env, _obj| {
             let result = JPollResult::from_env(env, result_ref.as_obj())?;
@@ -164,7 +164,7 @@ impl api::Peripheral for Peripheral {
 
     async fn discover_characteristics(&self) -> Result<Vec<Characteristic>> {
         let future =
-            self.with_obj(|_env, obj| JavaFuture::try_from(obj.discover_characteristics()?))?;
+            self.with_obj(|_env, obj| JSendFuture::try_from(obj.discover_characteristics()?))?;
         let result_ref = future.await?;
         self.with_obj(|env, _obj| {
             use std::iter::FromIterator;
@@ -202,7 +202,7 @@ impl api::Peripheral for Peripheral {
                 WriteType::WithResponse => 2,
                 WriteType::WithoutResponse => 1,
             };
-            JavaFuture::try_from(obj.write(uuid, data_obj.into(), write_type)?)
+            JSendFuture::try_from(obj.write(uuid, data_obj.into(), write_type)?)
         })?;
         let result_ref = future.await?;
         self.with_obj(|env, _obj| {
@@ -214,7 +214,7 @@ impl api::Peripheral for Peripheral {
     async fn read(&self, characteristic: &Characteristic) -> Result<Vec<u8>> {
         let future = self.with_obj(|env, obj| {
             let uuid = JUuid::new(env, characteristic.uuid)?;
-            JavaFuture::try_from(obj.read(uuid)?)
+            JSendFuture::try_from(obj.read(uuid)?)
         })?;
         let result_ref = future.await?;
         self.with_obj(|env, _obj| {
