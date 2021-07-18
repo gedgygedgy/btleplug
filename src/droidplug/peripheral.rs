@@ -9,7 +9,7 @@ use jni::{
     JNIEnv,
 };
 use jni_utils::{
-    arrays::byte_array_to_vec, exceptions::try_block, future::JSendFuture, stream::JavaStream,
+    arrays::byte_array_to_vec, exceptions::try_block, future::JSendFuture, stream::JSendStream,
     task::JPollResult, uuid::JUuid,
 };
 use std::{
@@ -236,7 +236,7 @@ impl api::Peripheral for Peripheral {
 
     async fn notifications(&self) -> Result<Pin<Box<dyn Stream<Item = ValueNotification>>>> {
         use futures::stream::StreamExt;
-        let stream = self.with_obj(|_env, obj| JavaStream::try_from(obj.get_notifications()?))?;
+        let stream = self.with_obj(|_env, obj| JSendStream::try_from(obj.get_notifications()?))?;
         let stream = stream
             .map(|item| match item {
                 Ok(item) => {
